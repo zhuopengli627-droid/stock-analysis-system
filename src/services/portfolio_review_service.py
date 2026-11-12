@@ -94,6 +94,8 @@ class PortfolioReviewService:
                 "account_id": account["account_id"],
                 "symbol": position["symbol"],
                 "quantity": position["quantity"],
+                "avg_cost": position["avg_cost"],
+                "review_price": position["last_price"],
                 "market_value": position["market_value_base"],
                 "unrealized_pnl": position["unrealized_pnl_base"],
                 "unrealized_pnl_pct": position.get("unrealized_pnl_pct"),
@@ -179,6 +181,91 @@ class PortfolioReviewService:
         if not payload["limitations"]:
             lines.append("- 无已知数据限制。")
         return "\n".join(lines) + "\n"
+
+    def verify_review(self, review_id: int, *, as_of: Optional[date] = None) -> Optional[Dict[str, Any]]:
+        row = self.repo.get_review(review_id)
+        if row is None:
+            return None
+        target_date = as_of or date.today()
+        payload = json.loads(row.payload_json)
+        review_date = row.review_date
+        items = []
+        for position in payload.get("facts", {}).get("positions", []):
+            symbol = str(position.get("symbol") or "")
+            review_price = position.get("review_price")
+            if not position.get("price_available", True) or not review_price:
+                items.append({
+                    "symbol": symbol,
+                    "status": "not_automatable",
+                    "reason": "review_price_unavailable",
+                })
+                continue
+            close = self.repo.get_next_close_with_metadata(
+                symbol=symbol,
+                after_date=review_date,
+                as_of=target_date,
+            )
+            if close is None:
+                items.append({
+                    "symbol": symbol,
+                    "status": "pending" if target_date <= review_date else "insufficient_data",
+                    "reason": "next_close_unavailable",
+                })
+                continue
+            close_price, close_date, provider = close
+            items.append({
+                "symbol": symbol,
+                "status": "verified_true" if close_price >= float(review_price) else "verified_false",
+                "judgment": "next_close_not_below_review_price",
+                "review_price": float(review_price),
+                "observed_close": close_price,
+                "observed_date": close_date.isoformat(),
+                "provider": provider,
+            })
+        statuses = {item["status"] for item in items}
+        if not items or statuses == {"not_automatable"}:
+            status = "not_automatable"
+        elif "insufficient_data" in statuses:
+            status = "insufficient_data"
+        elif "pending" in statuses:
+            status = "pending"
+        elif "verified_false" in statuses:
+            status = "verified_false"
+        else:
+            status = "verified_true"
+        details = {
+            "review_id": review_id,
+            "review_date": review_date.isoformat(),
+            "as_of": target_date.isoformat(),
+            "method": "next_close",
+            "status": status,
+            "items": items,
+        }
+        verification = self.repo.add_review_verification(
+            review_id=review_id,
+            as_of=target_date,
+            status=status,
+            method="next_close",
+            details_json=json.dumps(details, ensure_ascii=False, allow_nan=False, separators=(",", ":")),
+        )
+        return self._serialize_verification(verification, details=details)
+
+    def list_verifications(self, review_id: int) -> Optional[list[Dict[str, Any]]]:
+        if self.repo.get_review(review_id) is None:
+            return None
+        return [self._serialize_verification(row) for row in self.repo.list_review_verifications(review_id)]
+
+    @staticmethod
+    def _serialize_verification(row: Any, *, details: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        return {
+            "id": row.id,
+            "review_id": row.review_id,
+            "as_of": row.as_of.isoformat(),
+            "status": row.status,
+            "method": row.method,
+            "details": details if details is not None else json.loads(row.details_json),
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
 
     @staticmethod
     def _serialize(row: Any, *, payload: Optional[Dict[str, Any]] = None, include_content: bool = True) -> Dict[str, Any]:

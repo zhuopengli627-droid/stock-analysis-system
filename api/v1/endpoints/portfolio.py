@@ -34,6 +34,9 @@ from api.v1.schemas.portfolio import (
     PortfolioReviewCreateRequest,
     PortfolioReviewItem,
     PortfolioReviewListResponse,
+    PortfolioReviewVerificationRequest,
+    PortfolioReviewVerificationItem,
+    PortfolioReviewVerificationListResponse,
     PortfolioSnapshotResponse,
     PortfolioTradeListResponse,
     PortfolioTradeCreateRequest,
@@ -510,6 +513,45 @@ def get_review(review_id: int) -> PortfolioReviewItem:
         raise
     except Exception as exc:
         raise _internal_error("Get portfolio review failed", exc)
+
+
+@router.post(
+    "/reviews/{review_id}/verify",
+    response_model=PortfolioReviewVerificationItem,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    summary="Verify a review against the next available closes",
+)
+def verify_review(
+    review_id: int,
+    request: PortfolioReviewVerificationRequest,
+) -> PortfolioReviewVerificationItem:
+    try:
+        item = PortfolioReviewService().verify_review(review_id, as_of=request.as_of)
+        if item is None:
+            raise api_error(404, "not_found", "Portfolio review not found")
+        return PortfolioReviewVerificationItem(**item)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _internal_error("Verify portfolio review failed", exc)
+
+
+@router.get(
+    "/reviews/{review_id}/verifications",
+    response_model=PortfolioReviewVerificationListResponse,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    summary="List append-only verification runs for a review",
+)
+def list_review_verifications(review_id: int) -> PortfolioReviewVerificationListResponse:
+    try:
+        items = PortfolioReviewService().list_verifications(review_id)
+        if items is None:
+            raise api_error(404, "not_found", "Portfolio review not found")
+        return PortfolioReviewVerificationListResponse(items=items)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _internal_error("List portfolio review verifications failed", exc)
 
 
 @router.post(

@@ -246,6 +246,30 @@ class PortfolioReviewListResponse(BaseModel):
     page_size: int
 
 
+class PortfolioReviewVerificationRequest(BaseModel):
+    as_of: Optional[date] = None
+
+
+class PortfolioReviewVerificationItem(BaseModel):
+    id: int
+    review_id: int
+    as_of: str
+    status: Literal[
+        "verified_true",
+        "verified_false",
+        "pending",
+        "insufficient_data",
+        "not_automatable",
+    ]
+    method: str
+    details: Dict[str, Any] = Field(default_factory=dict)
+    created_at: Optional[str] = None
+
+
+class PortfolioReviewVerificationListResponse(BaseModel):
+    items: List[PortfolioReviewVerificationItem] = Field(default_factory=list)
+
+
 class PortfolioImportTradeItem(BaseModel):
     trade_date: str
     symbol: str

@@ -1959,6 +1959,8 @@ worker 会把 `triggered`、`skipped`、`degraded`、`failed` 写入 `alert_trig
 | `/api/v1/portfolio/corporate-actions` | GET | 分页查询公司行动 |
 | `/api/v1/portfolio/reviews` | POST / GET | 生成或分页查询账户复盘 |
 | `/api/v1/portfolio/reviews/{review_id}` | GET | 查询指定复盘版本及 Markdown / JSON |
+| `/api/v1/portfolio/reviews/{review_id}/verify` | POST | 使用复盘后的首个收盘价执行验证 |
+| `/api/v1/portfolio/reviews/{review_id}/verifications` | GET | 查询该复盘的验证历史 |
 | `/api/v1/portfolio/imports/csv/brokers` | GET | 查询内建 CSV 券商解析器 |
 | `/api/v1/portfolio/fx/refresh` | POST | 手动刷新汇率缓存 |
 | `/api/v1/portfolio/accounts/{account_id}` | DELETE | 删除/归档持仓账户 |
@@ -1973,6 +1975,7 @@ worker 会把 `triggered`、`skipped`、`degraded`、`failed` 写入 `alert_trig
 - 成交导入内建 `huatai`、`citic`、`cmb` 解析器；支持 CSV 和 XLSX，多工作表 XLSX 使用“成交导入”工作表，同一文件包含多个账户时会拒绝导入。
 - 导入流程会先把文件解析成标准化记录，再逐条提交到持仓账本；遇到忙碌行会计入 `failed_count`，不会因为单行冲突让整批请求整体失败。
 - 账户复盘默认使用本地历史收盘价，不触发实时行情；规则版报告明确区分事实、计算和规则判断，同日重复生成会增加版本号并保留旧报告。
+- 次日验证按每只持仓在复盘日后的首个可用收盘价检查“收盘价不低于复盘价”，分别返回 `verified_true`、`verified_false`、`pending`、`insufficient_data` 或 `not_automatable`；每次验证追加保存，不覆盖旧结果。
 - 删除账户使用软删除语义：默认账户列表、快照、风险、录入入口和事件列表不再显示该账户，但交易、现金流水和公司行动不会被物理清理；如需纠正单条流水，需在账户归档前使用事件列表里的删除修正入口。
 - 交易去重优先使用账户内唯一的 `trade_uid`，缺失时回退到基于日期、代码、方向、数量、价格、费用、税费、币种的确定性哈希。
 - 卖出会先校验可用数量，超卖返回 `409 portfolio_oversell`；并发写入冲突时可能返回 `409 portfolio_busy`。

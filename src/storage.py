@@ -750,6 +750,24 @@ class PortfolioReview(Base):
     )
 
 
+class PortfolioReviewVerification(Base):
+    """Append-only verification run for one persisted portfolio review."""
+
+    __tablename__ = 'portfolio_review_verifications'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    review_id = Column(Integer, ForeignKey('portfolio_reviews.id'), nullable=False, index=True)
+    as_of = Column(Date, nullable=False, index=True)
+    status = Column(String(24), nullable=False, index=True)
+    method = Column(String(32), nullable=False, default='next_close')
+    details_json = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+    __table_args__ = (
+        Index('ix_portfolio_review_verification_review_created', 'review_id', 'created_at'),
+    )
+
+
 class ConversationMessage(Base):
     """
     Agent 对话历史记录表

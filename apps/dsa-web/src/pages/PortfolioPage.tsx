@@ -48,6 +48,7 @@ import type {
   PortfolioPositionItem,
   PortfolioRiskResponse,
   PortfolioReviewItem,
+  PortfolioReviewVerificationItem,
   PortfolioSide,
   PortfolioSnapshotResponse,
   PortfolioTradeListItem,
@@ -665,6 +666,7 @@ const PortfolioPage: React.FC = () => {
   const [reviews, setReviews] = useState<PortfolioReviewItem[]>([]);
   const [selectedReview, setSelectedReview] = useState<PortfolioReviewItem | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewVerifications, setReviewVerifications] = useState<PortfolioReviewVerificationItem[]>([]);
 
   const [brokers, setBrokers] = useState<PortfolioImportBrokerItem[]>([]);
   const [selectedBroker, setSelectedBroker] = useState('huatai');
@@ -877,6 +879,15 @@ const PortfolioPage: React.FC = () => {
     await loadEventsPage(eventPage);
   }, [eventPage, loadEventsPage]);
 
+  const loadReviewDetail = useCallback(async (reviewId: number) => {
+    const [detail, verificationResponse] = await Promise.all([
+      portfolioApi.getReview(reviewId),
+      portfolioApi.listReviewVerifications(reviewId),
+    ]);
+    setSelectedReview(detail);
+    setReviewVerifications(verificationResponse.items || []);
+  }, []);
+
   const loadReviews = useCallback(async () => {
     setReviewLoading(true);
     try {
@@ -884,16 +895,17 @@ const PortfolioPage: React.FC = () => {
       const items = response.items || [];
       setReviews(items);
       if (items.length > 0) {
-        setSelectedReview(await portfolioApi.getReview(items[0].id));
+        await loadReviewDetail(items[0].id);
       } else {
         setSelectedReview(null);
+        setReviewVerifications([]);
       }
     } catch (err) {
       setError(getParsedApiError(err));
     } finally {
       setReviewLoading(false);
     }
-  }, [queryAccountId]);
+  }, [loadReviewDetail, queryAccountId]);
 
   const refreshPortfolioData = useCallback(async (page = eventPage) => {
     await Promise.all([loadSnapshotAndRisk(), loadEventsPage(page)]);
@@ -1342,8 +1354,23 @@ const PortfolioPage: React.FC = () => {
         includeRealtime: false,
       });
       setSelectedReview(created);
+      setReviewVerifications([]);
       const response = await portfolioApi.listReviews(queryAccountId);
       setReviews(response.items || []);
+      setError(null);
+    } catch (err) {
+      setError(getParsedApiError(err));
+    } finally {
+      setReviewLoading(false);
+    }
+  };
+
+  const handleVerifyReview = async () => {
+    if (!selectedReview) return;
+    setReviewLoading(true);
+    try {
+      const verification = await portfolioApi.verifyReview(selectedReview.id);
+      setReviewVerifications((current) => [verification, ...current]);
       setError(null);
     } catch (err) {
       setError(getParsedApiError(err));
@@ -2032,9 +2059,14 @@ const PortfolioPage: React.FC = () => {
               <h3 className="text-sm font-semibold text-foreground">账户每日复盘</h3>
               <p className="mt-1 text-xs text-secondary">规则版报告保存 Markdown、JSON、行情来源和数据限制，同日重复生成会保留新版本。</p>
             </div>
-            <button type="button" className="btn-secondary text-sm" disabled={reviewLoading} onClick={() => void handleCreateReview()}>
-              {reviewLoading ? '处理中...' : '生成今日复盘'}
-            </button>
+            <div className="flex gap-2">
+              <button type="button" className="btn-secondary text-sm" disabled={!selectedReview || reviewLoading} onClick={() => void handleVerifyReview()}>
+                执行验证
+              </button>
+              <button type="button" className="btn-secondary text-sm" disabled={reviewLoading} onClick={() => void handleCreateReview()}>
+                {reviewLoading ? '处理中...' : '生成今日复盘'}
+              </button>
+            </div>
           </div>
           {reviews.length > 0 ? (
             <div className="mb-3 flex flex-wrap gap-2">
@@ -2045,8 +2077,7 @@ const PortfolioPage: React.FC = () => {
                   className={`rounded-lg border px-3 py-1 text-xs ${selectedReview?.id === item.id ? 'border-primary text-primary' : 'border-white/10 text-secondary'}`}
                   onClick={() => {
                     setReviewLoading(true);
-                    void portfolioApi.getReview(item.id)
-                      .then(setSelectedReview)
+                    void loadReviewDetail(item.id)
                       .catch((err) => setError(getParsedApiError(err)))
                       .finally(() => setReviewLoading(false));
                   }}
@@ -2054,6 +2085,12 @@ const PortfolioPage: React.FC = () => {
                   {item.reviewDate} · V{item.version}
                 </button>
               ))}
+            </div>
+          ) : null}
+          {reviewVerifications.length > 0 ? (
+            <div className="mb-3 rounded-lg border border-white/10 px-3 py-2 text-xs text-secondary">
+              最近验证：{reviewVerifications[0].asOf} · {reviewVerifications[0].status}
+              <span className="ml-2">共 {reviewVerifications.length} 次</span>
             </div>
           ) : null}
           {selectedReview?.markdown ? (

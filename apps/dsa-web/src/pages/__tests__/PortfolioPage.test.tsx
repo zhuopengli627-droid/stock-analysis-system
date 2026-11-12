@@ -31,6 +31,8 @@ const {
   createReview,
   listReviews,
   getReview,
+  verifyReview,
+  listReviewVerifications,
   listDecisionSignals,
   getLatestDecisionSignals,
 } = vi.hoisted(() => ({
@@ -56,6 +58,8 @@ const {
   createReview: vi.fn(),
   listReviews: vi.fn(),
   getReview: vi.fn(),
+  verifyReview: vi.fn(),
+  listReviewVerifications: vi.fn(),
   listDecisionSignals: vi.fn(),
   getLatestDecisionSignals: vi.fn(),
 }));
@@ -91,6 +95,8 @@ vi.mock('../../api/portfolio', () => ({
     createReview,
     listReviews,
     getReview,
+    verifyReview,
+    listReviewVerifications,
   },
 }));
 
@@ -363,6 +369,15 @@ describe('PortfolioPage FX refresh', () => {
       dataQuality: 'ok',
       markdown: '# 持仓复盘',
     });
+    listReviewVerifications.mockResolvedValue({ items: [] });
+    verifyReview.mockResolvedValue({
+      id: 1,
+      reviewId: 1,
+      asOf: '2026-03-20',
+      status: 'verified_true',
+      method: 'next_close',
+      details: {},
+    });
     getLatestDecisionSignals.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 1 });
   });
 
@@ -397,6 +412,10 @@ describe('PortfolioPage FX refresh', () => {
       includeRealtime: false,
     });
     expect(listReviews).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '执行验证' }));
+    expect(await screen.findByText(/最近验证：2026-03-20 · verified_true/)).toBeInTheDocument();
+    expect(verifyReview).toHaveBeenCalledWith(1);
   });
 
   it('renders stale FX status with a manual refresh button', async () => {

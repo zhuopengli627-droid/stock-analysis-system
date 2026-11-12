@@ -105,6 +105,27 @@ class PortfolioReviewServiceTest(unittest.TestCase):
         self.assertEqual(listed["total"], 2)
         self.assertEqual([item["version"] for item in listed["items"]], [2, 1])
 
+        pending = service.verify_review(first["id"], as_of=date(2026, 1, 2))
+        self.assertEqual(pending["status"], "pending")
+        self.db.save_daily_data(
+            pd.DataFrame([{
+                "date": date(2026, 1, 3),
+                "open": 75,
+                "high": 75,
+                "low": 75,
+                "close": 75,
+                "volume": 1,
+                "amount": 75,
+                "pct_chg": 0,
+            }]),
+            code="000001",
+            data_source="next-close-test",
+        )
+        verified = service.verify_review(first["id"], as_of=date(2026, 1, 3))
+        self.assertEqual(verified["status"], "verified_false")
+        self.assertEqual(verified["details"]["items"][0]["provider"], "next-close-test")
+        self.assertEqual(len(service.list_verifications(first["id"])), 2)
+
     def test_review_api_generates_lists_and_reads_content(self) -> None:
         created = self.client.post(
             "/api/v1/portfolio/reviews",
@@ -127,6 +148,16 @@ class PortfolioReviewServiceTest(unittest.TestCase):
         detail = self.client.get(f"/api/v1/portfolio/reviews/{review_id}")
         self.assertEqual(detail.status_code, 200, detail.text)
         self.assertIn("# 2026-01-02 持仓复盘", detail.json()["markdown"])
+
+        verification = self.client.post(
+            f"/api/v1/portfolio/reviews/{review_id}/verify",
+            json={"as_of": "2026-01-02"},
+        )
+        self.assertEqual(verification.status_code, 200, verification.text)
+        self.assertEqual(verification.json()["status"], "pending")
+        verification_history = self.client.get(f"/api/v1/portfolio/reviews/{review_id}/verifications")
+        self.assertEqual(verification_history.status_code, 200, verification_history.text)
+        self.assertEqual(len(verification_history.json()["items"]), 1)
 
         invalid_range = self.client.get(
             "/api/v1/portfolio/reviews",

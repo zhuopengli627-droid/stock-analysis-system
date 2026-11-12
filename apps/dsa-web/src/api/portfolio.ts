@@ -20,6 +20,8 @@ import type {
   PortfolioReviewCreateRequest,
   PortfolioReviewItem,
   PortfolioReviewListResponse,
+  PortfolioReviewVerificationItem,
+  PortfolioReviewVerificationListResponse,
   PortfolioRiskResponse,
   PortfolioSnapshotResponse,
   PortfolioTradeCreateRequest,
@@ -178,6 +180,21 @@ export const portfolioApi = {
   async getReview(reviewId: number): Promise<PortfolioReviewItem> {
     const response = await apiClient.get<Record<string, unknown>>(`/api/v1/portfolio/reviews/${reviewId}`);
     return toCamelCase<PortfolioReviewItem>(response.data);
+  },
+
+  async verifyReview(reviewId: number, asOf?: string): Promise<PortfolioReviewVerificationItem> {
+    const response = await apiClient.post<Record<string, unknown>>(
+      `/api/v1/portfolio/reviews/${reviewId}/verify`,
+      { as_of: asOf },
+    );
+    return toCamelCase<PortfolioReviewVerificationItem>(response.data);
+  },
+
+  async listReviewVerifications(reviewId: number): Promise<PortfolioReviewVerificationListResponse> {
+    const response = await apiClient.get<Record<string, unknown>>(
+      `/api/v1/portfolio/reviews/${reviewId}/verifications`,
+    );
+    return toCamelCase<PortfolioReviewVerificationListResponse>(response.data);
   },
 
   async refreshFx(query: FxRefreshQuery = {}): Promise<PortfolioFxRefreshResponse> {

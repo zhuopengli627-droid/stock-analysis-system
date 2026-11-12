@@ -24,6 +24,7 @@ from src.storage import (
     PortfolioPosition,
     PortfolioPositionLot,
     PortfolioReview,
+    PortfolioReviewVerification,
     PortfolioTrade,
     StockDaily,
 )
@@ -206,6 +207,39 @@ class PortfolioRepository:
             for row in rows:
                 session.expunge(row)
             return list(rows), total
+
+    def add_review_verification(
+        self,
+        *,
+        review_id: int,
+        as_of: date,
+        status: str,
+        method: str,
+        details_json: str,
+    ) -> PortfolioReviewVerification:
+        with self.portfolio_write_session() as session:
+            row = PortfolioReviewVerification(
+                review_id=review_id,
+                as_of=as_of,
+                status=status,
+                method=method,
+                details_json=details_json,
+            )
+            session.add(row)
+            session.flush()
+            session.expunge(row)
+            return row
+
+    def list_review_verifications(self, review_id: int) -> List[PortfolioReviewVerification]:
+        with self.db.get_session() as session:
+            rows = session.execute(
+                select(PortfolioReviewVerification)
+                .where(PortfolioReviewVerification.review_id == review_id)
+                .order_by(PortfolioReviewVerification.id.desc())
+            ).scalars().all()
+            for row in rows:
+                session.expunge(row)
+            return list(rows)
 
     # ------------------------------------------------------------------
     # Event writes
@@ -807,6 +841,29 @@ class PortfolioRepository:
                     )
                 )
                 .order_by(desc(StockDaily.date))
+                .limit(1)
+            ).scalar_one_or_none()
+            if row is None or row.close is None:
+                return None
+            return float(row.close), row.date, row.data_source
+
+    def get_next_close_with_metadata(
+        self,
+        symbol: str,
+        after_date: date,
+        as_of: date,
+    ) -> Optional[Tuple[float, date, Optional[str]]]:
+        with self.db.get_session() as session:
+            row = session.execute(
+                select(StockDaily)
+                .where(
+                    and_(
+                        StockDaily.code == symbol,
+                        StockDaily.date > after_date,
+                        StockDaily.date <= as_of,
+                    )
+                )
+                .order_by(StockDaily.date.asc())
                 .limit(1)
             ).scalar_one_or_none()
             if row is None or row.close is None:

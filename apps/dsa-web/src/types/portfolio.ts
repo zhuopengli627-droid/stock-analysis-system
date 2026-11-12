@@ -327,6 +327,27 @@ export interface PortfolioReviewListResponse {
   pageSize: number;
 }
 
+export type PortfolioReviewVerificationStatus =
+  | 'verified_true'
+  | 'verified_false'
+  | 'pending'
+  | 'insufficient_data'
+  | 'not_automatable';
+
+export interface PortfolioReviewVerificationItem {
+  id: number;
+  reviewId: number;
+  asOf: string;
+  status: PortfolioReviewVerificationStatus;
+  method: string;
+  details: Record<string, unknown>;
+  createdAt?: string | null;
+}
+
+export interface PortfolioReviewVerificationListResponse {
+  items: PortfolioReviewVerificationItem[];
+}
+
 export interface PortfolioImportParseResponse {
   broker: string;
   recordCount: number;

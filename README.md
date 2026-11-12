@@ -37,3 +37,5 @@ Copy-Item .env.example .env
 ```powershell
 .venv/Scripts/python.exe -m unittest discover -s tests -p 'test_portfolio*.py'
 ```
+
+已有券商持仓截图时，可以在本地生成 [持仓快照复盘](docs/portfolio-snapshot-review.md)。

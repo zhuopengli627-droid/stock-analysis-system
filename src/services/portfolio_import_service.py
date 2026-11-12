@@ -8,9 +8,12 @@ import io
 import logging
 from dataclasses import dataclass
 from datetime import date
+from pathlib import PurePath
 from typing import Any, Dict, List, Optional, Tuple
+from zipfile import BadZipFile
 
 import pandas as pd
+from openpyxl.utils.exceptions import InvalidFileException
 
 from data_provider.base import canonical_stock_code
 from src.repositories.portfolio_repo import PortfolioRepository
@@ -146,9 +149,20 @@ class PortfolioImportService:
         broker: str,
         content: bytes,
     ) -> Dict[str, Any]:
+        return self.parse_trade_file(broker=broker, content=content, filename="trades.csv")
+
+    def parse_trade_file(
+        self, *, broker: str, content: bytes, filename: str
+    ) -> Dict[str, Any]:
         broker_norm = self._normalize_broker(broker)
         parser_spec = self._parser_registry[broker_norm]
-        df = self._read_csv(content)
+        suffix = PurePath(filename).suffix.lower()
+        if suffix == ".xlsx":
+            df = self._read_excel(content)
+        elif suffix in ("", ".csv"):
+            df = self._read_csv(content)
+        else:
+            raise ValueError("Trade import supports CSV and XLSX files")
 
         records: List[Dict[str, Any]] = []
         skipped = 0
@@ -291,6 +305,38 @@ class PortfolioImportService:
                 continue
         return pd.read_csv(io.BytesIO(content), dtype=str, keep_default_na=False)
 
+    @staticmethod
+    def _read_excel(content: bytes) -> pd.DataFrame:
+        try:
+            with pd.ExcelFile(io.BytesIO(content), engine="openpyxl") as workbook:
+                if "成交导入" in workbook.sheet_names:
+                    sheet = "成交导入"
+                elif len(workbook.sheet_names) == 1:
+                    sheet = workbook.sheet_names[0]
+                else:
+                    raise ValueError("Multi-sheet trade workbooks must include a 成交导入 sheet")
+                rows = pd.read_excel(workbook, sheet_name=sheet, dtype=str, keep_default_na=False)
+        except (BadZipFile, InvalidFileException, KeyError) as exc:
+            raise ValueError("Invalid XLSX trade workbook") from exc
+
+        if "账户" in rows.columns:
+            accounts = {name.strip() for name in rows["账户"] if name.strip()}
+            if len(accounts) > 1:
+                raise ValueError("Split trades by account before importing")
+
+        template_headers = {
+            "成交数量(股)": "成交数量",
+            "成交价格(元/股)": "成交价格",
+            "券商成交编号": "成交编号",
+            "佣金(元)": "佣金",
+            "印花税(元)": "印花税",
+            "过户费(元)": "过户费",
+            "其他费用(元)": "其他费用",
+        }
+        return rows.rename(columns={
+            source: target for source, target in template_headers.items() if target not in rows.columns
+        })
+
     def _normalize_trade_row(
         self,
         *,
@@ -345,7 +391,7 @@ class PortfolioImportService:
             return None
 
         fee = 0.0
-        for col in ("手续费", "佣金", "交易费", "规费", "过户费"):
+        for col in ("手续费", "佣金", "交易费", "规费", "过户费", "其他费用"):
             value = self._parse_float(self._pick(row, col))
             if value is not None:
                 fee += value

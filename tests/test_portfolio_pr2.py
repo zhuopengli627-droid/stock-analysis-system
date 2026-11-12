@@ -8,12 +8,14 @@ import sys
 import tempfile
 import unittest
 from datetime import date
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
 from fastapi.testclient import TestClient
+from openpyxl import Workbook
 
 try:
     import litellm  # noqa: F401
@@ -145,6 +147,35 @@ class PortfolioPr2TestCase(unittest.TestCase):
             )
         return csv_text.encode("utf-8")
 
+    @staticmethod
+    def _xlsx_bytes(*, second_account: bool = False) -> bytes:
+        workbook = Workbook()
+        instructions = workbook.active
+        instructions.title = "使用说明"
+        instructions.append(["仅供测试"])
+        trades = workbook.create_sheet("成交导入")
+        trades.append(
+            [
+                "成交日期",
+                "证券代码",
+                "买卖方向",
+                "成交数量(股)",
+                "成交价格(元/股)",
+                "佣金(元)",
+                "印花税(元)",
+                "过户费(元)",
+                "其他费用(元)",
+                "券商成交编号",
+                "账户",
+            ]
+        )
+        trades.append([date(2026, 1, 2), "000001", "买入", 10, 100, 1, 2, 3, 4, "HT-XLSX-001", "主账户"])
+        if second_account:
+            trades.append([date(2026, 1, 3), "600519", "买入", 1, 1500, 1, 0, 0, 0, "HT-XLSX-002", "备用账户"])
+        output = BytesIO()
+        workbook.save(output)
+        return output.getvalue()
+
     def test_import_dedup_trade_uid_and_hash(self) -> None:
         account = self.service.create_account(name="Main", broker="Demo", market="cn", base_currency="CNY")
         aid = account["id"]
@@ -212,6 +243,38 @@ class PortfolioPr2TestCase(unittest.TestCase):
         )
         self.assertEqual(parsed["record_count"], 1)
         self.assertEqual(parsed["records"][0]["symbol"], "000001")
+
+    def test_import_xlsx_template_sheet_and_fee_components(self) -> None:
+        parsed = self.import_service.parse_trade_file(
+            broker="huatai",
+            content=self._xlsx_bytes(),
+            filename="交易数据模板.xlsx",
+        )
+
+        self.assertEqual(parsed["record_count"], 1)
+        record = parsed["records"][0]
+        self.assertEqual(record["symbol"], "000001")
+        self.assertEqual(record["quantity"], 10)
+        self.assertEqual(record["price"], 100)
+        self.assertEqual(record["fee"], 8)
+        self.assertEqual(record["tax"], 2)
+        self.assertEqual(record["trade_uid"], "HT-XLSX-001")
+
+    def test_import_xlsx_rejects_multiple_accounts(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Split trades by account"):
+            self.import_service.parse_trade_file(
+                broker="huatai",
+                content=self._xlsx_bytes(second_account=True),
+                filename="交易数据模板.xlsx",
+            )
+
+    def test_import_rejects_unsupported_file_type(self) -> None:
+        with self.assertRaisesRegex(ValueError, "supports CSV and XLSX"):
+            self.import_service.parse_trade_file(
+                broker="huatai",
+                content=b"not a trade file",
+                filename="trades.xls",
+            )
 
     def test_import_dry_run_counts_in_file_duplicates(self) -> None:
         account = self.service.create_account(name="Main", broker="Demo", market="cn", base_currency="CNY")

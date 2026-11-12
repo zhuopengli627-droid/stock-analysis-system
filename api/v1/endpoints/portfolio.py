@@ -559,7 +559,7 @@ def _resolve_position_analysis_context(
     "/imports/csv/parse",
     response_model=PortfolioImportParseResponse,
     responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
-    summary="Parse broker CSV into normalized trade records",
+    summary="Parse broker CSV or XLSX into normalized trade records",
 )
 def parse_csv_import(
     broker: str = Form(..., description="Broker id: huatai/citic/cmb"),
@@ -568,7 +568,7 @@ def parse_csv_import(
     importer = PortfolioImportService()
     try:
         content = file.file.read()
-        parsed = importer.parse_trade_csv(broker=broker, content=content)
+        parsed = importer.parse_trade_file(broker=broker, content=content, filename=file.filename or "")
         return PortfolioImportParseResponse(
             broker=parsed["broker"],
             record_count=parsed["record_count"],
@@ -601,7 +601,7 @@ def list_csv_brokers() -> PortfolioImportBrokerListResponse:
     "/imports/csv/commit",
     response_model=PortfolioImportCommitResponse,
     responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
-    summary="Parse and commit broker CSV with dedup",
+    summary="Parse and commit broker CSV or XLSX with dedup",
 )
 def commit_csv_import(
     account_id: int = Form(...),
@@ -612,7 +612,7 @@ def commit_csv_import(
     importer = PortfolioImportService()
     try:
         content = file.file.read()
-        parsed = importer.parse_trade_csv(broker=broker, content=content)
+        parsed = importer.parse_trade_file(broker=broker, content=content, filename=file.filename or "")
         result = importer.commit_trade_records(
             account_id=account_id,
             broker=parsed["broker"],

@@ -17,6 +17,9 @@ import type {
   PortfolioImportCommitResponse,
   PortfolioImportParseResponse,
   PortfolioPositionAnalysisRequest,
+  PortfolioReviewCreateRequest,
+  PortfolioReviewItem,
+  PortfolioReviewListResponse,
   PortfolioRiskResponse,
   PortfolioSnapshotResponse,
   PortfolioTradeCreateRequest,
@@ -153,6 +156,28 @@ export const portfolioApi = {
       params: buildSnapshotParams(query),
     });
     return toCamelCase<PortfolioRiskResponse>(response.data);
+  },
+
+  async createReview(payload: PortfolioReviewCreateRequest = {}): Promise<PortfolioReviewItem> {
+    const response = await apiClient.post<Record<string, unknown>>('/api/v1/portfolio/reviews', {
+      account_id: payload.accountId,
+      review_date: payload.reviewDate,
+      cost_method: payload.costMethod ?? 'fifo',
+      include_realtime: payload.includeRealtime ?? false,
+    });
+    return toCamelCase<PortfolioReviewItem>(response.data);
+  },
+
+  async listReviews(accountId?: number): Promise<PortfolioReviewListResponse> {
+    const response = await apiClient.get<Record<string, unknown>>('/api/v1/portfolio/reviews', {
+      params: { account_id: accountId, page: 1, page_size: 20 },
+    });
+    return toCamelCase<PortfolioReviewListResponse>(response.data);
+  },
+
+  async getReview(reviewId: number): Promise<PortfolioReviewItem> {
+    const response = await apiClient.get<Record<string, unknown>>(`/api/v1/portfolio/reviews/${reviewId}`);
+    return toCamelCase<PortfolioReviewItem>(response.data);
   },
 
   async refreshFx(query: FxRefreshQuery = {}): Promise<PortfolioFxRefreshResponse> {

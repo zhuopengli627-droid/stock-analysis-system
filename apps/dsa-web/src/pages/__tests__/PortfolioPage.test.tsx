@@ -28,6 +28,9 @@ const {
   createAccount,
   deleteAccount,
   analyzePosition,
+  createReview,
+  listReviews,
+  getReview,
   listDecisionSignals,
   getLatestDecisionSignals,
 } = vi.hoisted(() => ({
@@ -50,6 +53,9 @@ const {
   createAccount: vi.fn(),
   deleteAccount: vi.fn(),
   analyzePosition: vi.fn(),
+  createReview: vi.fn(),
+  listReviews: vi.fn(),
+  getReview: vi.fn(),
   listDecisionSignals: vi.fn(),
   getLatestDecisionSignals: vi.fn(),
 }));
@@ -82,6 +88,9 @@ vi.mock('../../api/portfolio', () => ({
     createAccount,
     deleteAccount,
     analyzePosition,
+    createReview,
+    listReviews,
+    getReview,
   },
 }));
 
@@ -333,6 +342,27 @@ describe('PortfolioPage FX refresh', () => {
       message: '分析任务已加入队列: HK00700',
       analysisPhase: 'auto',
     });
+    listReviews.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20 });
+    getReview.mockResolvedValue({
+      id: 1,
+      accountId: 1,
+      reviewDate: '2026-03-19',
+      version: 1,
+      costMethod: 'fifo',
+      generationMode: 'rules',
+      dataQuality: 'ok',
+      markdown: '# 持仓复盘',
+    });
+    createReview.mockResolvedValue({
+      id: 1,
+      accountId: 1,
+      reviewDate: '2026-03-19',
+      version: 1,
+      costMethod: 'fifo',
+      generationMode: 'rules',
+      dataQuality: 'ok',
+      markdown: '# 持仓复盘',
+    });
     getLatestDecisionSignals.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 1 });
   });
 
@@ -352,6 +382,21 @@ describe('PortfolioPage FX refresh', () => {
 
     expect(getSnapshot).toHaveBeenCalledWith({ accountId: undefined, costMethod: 'fifo', includeRealtime: false });
     expect(getRisk).toHaveBeenCalledWith({ accountId: undefined, costMethod: 'fifo', includeRealtime: false });
+  });
+
+  it('generates and renders an append-only portfolio review', async () => {
+    render(<PortfolioPage />);
+
+    await waitForInitialLoad();
+    fireEvent.click(screen.getByRole('button', { name: '生成今日复盘' }));
+
+    expect(await screen.findByTestId('portfolio-review-markdown')).toHaveTextContent('持仓复盘');
+    expect(createReview).toHaveBeenCalledWith({
+      accountId: undefined,
+      costMethod: 'fifo',
+      includeRealtime: false,
+    });
+    expect(listReviews).toHaveBeenCalled();
   });
 
   it('renders stale FX status with a manual refresh button', async () => {

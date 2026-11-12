@@ -8,6 +8,7 @@ import type { ParsedApiError } from '../api/error';
 import { getParsedApiError } from '../api/error';
 import { ApiErrorAlert, Card, Badge, ConfirmDialog, EmptyState, InlineAlert, StatusDot } from '../components/common';
 import { PortfolioSignalSummary } from '../components/decision-signals/DecisionSignalDisplay';
+import { ReportMarkdownBody } from '../components/report/ReportMarkdownBody';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
 import { formatUiText } from '../i18n/uiText';
 import { PORTFOLIO_TEXT } from '../locales/featureText';
@@ -46,6 +47,7 @@ import type {
   PortfolioImportParseResponse,
   PortfolioPositionItem,
   PortfolioRiskResponse,
+  PortfolioReviewItem,
   PortfolioSide,
   PortfolioSnapshotResponse,
   PortfolioTradeListItem,
@@ -660,6 +662,9 @@ const PortfolioPage: React.FC = () => {
   const portfolioSignalsRequestRef = useRef(0);
   const [positionAnalysisLoadingKey, setPositionAnalysisLoadingKey] = useState<string | null>(null);
   const [positionAnalysisMessage, setPositionAnalysisMessage] = useState<string | null>(null);
+  const [reviews, setReviews] = useState<PortfolioReviewItem[]>([]);
+  const [selectedReview, setSelectedReview] = useState<PortfolioReviewItem | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
 
   const [brokers, setBrokers] = useState<PortfolioImportBrokerItem[]>([]);
   const [selectedBroker, setSelectedBroker] = useState('huatai');
@@ -872,6 +877,24 @@ const PortfolioPage: React.FC = () => {
     await loadEventsPage(eventPage);
   }, [eventPage, loadEventsPage]);
 
+  const loadReviews = useCallback(async () => {
+    setReviewLoading(true);
+    try {
+      const response = await portfolioApi.listReviews(queryAccountId);
+      const items = response.items || [];
+      setReviews(items);
+      if (items.length > 0) {
+        setSelectedReview(await portfolioApi.getReview(items[0].id));
+      } else {
+        setSelectedReview(null);
+      }
+    } catch (err) {
+      setError(getParsedApiError(err));
+    } finally {
+      setReviewLoading(false);
+    }
+  }, [queryAccountId]);
+
   const refreshPortfolioData = useCallback(async (page = eventPage) => {
     await Promise.all([loadSnapshotAndRisk(), loadEventsPage(page)]);
   }, [eventPage, loadEventsPage, loadSnapshotAndRisk]);
@@ -888,6 +911,10 @@ const PortfolioPage: React.FC = () => {
   useEffect(() => {
     void loadEvents();
   }, [loadEvents]);
+
+  useEffect(() => {
+    void loadReviews();
+  }, [loadReviews]);
 
   useEffect(() => {
     refreshContextRef.current = {
@@ -1306,8 +1333,27 @@ const PortfolioPage: React.FC = () => {
     }
   };
 
+  const handleCreateReview = async () => {
+    setReviewLoading(true);
+    try {
+      const created = await portfolioApi.createReview({
+        accountId: queryAccountId,
+        costMethod,
+        includeRealtime: false,
+      });
+      setSelectedReview(created);
+      const response = await portfolioApi.listReviews(queryAccountId);
+      setReviews(response.items || []);
+      setError(null);
+    } catch (err) {
+      setError(getParsedApiError(err));
+    } finally {
+      setReviewLoading(false);
+    }
+  };
+
   const handleRefresh = async () => {
-    await Promise.all([loadAccounts(), loadSnapshotAndRisk(), loadEvents(), loadBrokers()]);
+    await Promise.all([loadAccounts(), loadSnapshotAndRisk(), loadEvents(), loadBrokers(), loadReviews()]);
     setPortfolioSignalsRefreshKey((current) => current + 1);
   };
 
@@ -1980,6 +2026,49 @@ const PortfolioPage: React.FC = () => {
       </section>
 
       <section className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+        <Card padding="md" className="xl:col-span-2">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">账户每日复盘</h3>
+              <p className="mt-1 text-xs text-secondary">规则版报告保存 Markdown、JSON、行情来源和数据限制，同日重复生成会保留新版本。</p>
+            </div>
+            <button type="button" className="btn-secondary text-sm" disabled={reviewLoading} onClick={() => void handleCreateReview()}>
+              {reviewLoading ? '处理中...' : '生成今日复盘'}
+            </button>
+          </div>
+          {reviews.length > 0 ? (
+            <div className="mb-3 flex flex-wrap gap-2">
+              {reviews.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`rounded-lg border px-3 py-1 text-xs ${selectedReview?.id === item.id ? 'border-primary text-primary' : 'border-white/10 text-secondary'}`}
+                  onClick={() => {
+                    setReviewLoading(true);
+                    void portfolioApi.getReview(item.id)
+                      .then(setSelectedReview)
+                      .catch((err) => setError(getParsedApiError(err)))
+                      .finally(() => setReviewLoading(false));
+                  }}
+                >
+                  {item.reviewDate} · V{item.version}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {selectedReview?.markdown ? (
+            <div className="max-h-[36rem] overflow-auto rounded-xl border border-white/10 p-4">
+              <ReportMarkdownBody content={selectedReview.markdown} testId="portfolio-review-markdown" />
+            </div>
+          ) : (
+            <EmptyState
+              title="暂无账户复盘"
+              description="生成后会保存规则检查、持仓明细与数据来源。"
+              className="border-none bg-transparent px-3 py-6 shadow-none"
+            />
+          )}
+        </Card>
+
         <Card padding="md">
           <h3 className="text-sm font-semibold text-foreground mb-3">成交文件导入</h3>
           <div className="space-y-2">

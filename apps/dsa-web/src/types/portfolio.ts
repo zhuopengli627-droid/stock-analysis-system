@@ -300,6 +300,33 @@ export interface PortfolioImportTradeItem {
   currency?: string | null;
 }
 
+export interface PortfolioReviewCreateRequest {
+  accountId?: number;
+  reviewDate?: string;
+  costMethod?: PortfolioCostMethod;
+  includeRealtime?: boolean;
+}
+
+export interface PortfolioReviewItem {
+  id: number;
+  accountId?: number | null;
+  reviewDate: string;
+  version: number;
+  costMethod: PortfolioCostMethod;
+  generationMode: string;
+  dataQuality: string;
+  createdAt?: string | null;
+  payload?: Record<string, unknown> | null;
+  markdown?: string | null;
+}
+
+export interface PortfolioReviewListResponse {
+  items: PortfolioReviewItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export interface PortfolioImportParseResponse {
   broker: string;
   recordCount: number;

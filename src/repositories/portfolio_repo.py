@@ -23,6 +23,7 @@ from src.storage import (
     PortfolioFxRate,
     PortfolioPosition,
     PortfolioPositionLot,
+    PortfolioReview,
     PortfolioTrade,
     StockDaily,
 )
@@ -129,6 +130,82 @@ class PortfolioRepository:
             row.updated_at = datetime.now()
             session.commit()
             return True
+
+    def add_review(
+        self,
+        *,
+        account_id: Optional[int],
+        review_date: date,
+        cost_method: str,
+        generation_mode: str,
+        data_quality: str,
+        payload_json: str,
+        markdown: str,
+    ) -> PortfolioReview:
+        with self.portfolio_write_session() as session:
+            version = session.execute(
+                select(func.coalesce(func.max(PortfolioReview.version), 0)).where(
+                    and_(
+                        PortfolioReview.account_id.is_(None)
+                        if account_id is None
+                        else PortfolioReview.account_id == account_id,
+                        PortfolioReview.review_date == review_date,
+                    )
+                )
+            ).scalar_one() + 1
+            row = PortfolioReview(
+                account_id=account_id,
+                review_date=review_date,
+                version=version,
+                cost_method=cost_method,
+                generation_mode=generation_mode,
+                data_quality=data_quality,
+                payload_json=payload_json,
+                markdown=markdown,
+            )
+            session.add(row)
+            session.flush()
+            session.expunge(row)
+            return row
+
+    def get_review(self, review_id: int) -> Optional[PortfolioReview]:
+        with self.db.get_session() as session:
+            row = session.get(PortfolioReview, review_id)
+            if row is not None:
+                session.expunge(row)
+            return row
+
+    def list_reviews(
+        self,
+        *,
+        account_id: Optional[int] = None,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> Tuple[List[PortfolioReview], int]:
+        conditions = []
+        if account_id is not None:
+            conditions.append(PortfolioReview.account_id == account_id)
+        if date_from is not None:
+            conditions.append(PortfolioReview.review_date >= date_from)
+        if date_to is not None:
+            conditions.append(PortfolioReview.review_date <= date_to)
+        with self.db.get_session() as session:
+            query = select(PortfolioReview)
+            count_query = select(func.count(PortfolioReview.id))
+            if conditions:
+                query = query.where(and_(*conditions))
+                count_query = count_query.where(and_(*conditions))
+            total = int(session.execute(count_query).scalar_one())
+            rows = session.execute(
+                query.order_by(PortfolioReview.review_date.desc(), PortfolioReview.version.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            ).scalars().all()
+            for row in rows:
+                session.expunge(row)
+            return list(rows), total
 
     # ------------------------------------------------------------------
     # Event writes
@@ -712,6 +789,14 @@ class PortfolioRepository:
         return close[0] if close is not None else None
 
     def get_latest_close_with_date(self, symbol: str, as_of: date) -> Optional[Tuple[float, date]]:
+        close = self.get_latest_close_with_metadata(symbol=symbol, as_of=as_of)
+        return (close[0], close[1]) if close is not None else None
+
+    def get_latest_close_with_metadata(
+        self,
+        symbol: str,
+        as_of: date,
+    ) -> Optional[Tuple[float, date, Optional[str]]]:
         with self.db.get_session() as session:
             row = session.execute(
                 select(StockDaily)
@@ -726,7 +811,7 @@ class PortfolioRepository:
             ).scalar_one_or_none()
             if row is None or row.close is None:
                 return None
-            return float(row.close), row.date
+            return float(row.close), row.date, row.data_source
 
     def save_fx_rate(
         self,

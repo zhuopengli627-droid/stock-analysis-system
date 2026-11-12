@@ -723,6 +723,33 @@ class PortfolioFxRate(Base):
     )
 
 
+class PortfolioReview(Base):
+    """Immutable account-level daily review with Markdown and structured evidence."""
+
+    __tablename__ = 'portfolio_reviews'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey('portfolio_accounts.id'), index=True)
+    review_date = Column(Date, nullable=False, index=True)
+    version = Column(Integer, nullable=False)
+    cost_method = Column(String(8), nullable=False, default='fifo')
+    generation_mode = Column(String(16), nullable=False, default='rules')
+    data_quality = Column(String(16), nullable=False, default='ok')
+    payload_json = Column(Text, nullable=False)
+    markdown = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            'account_id',
+            'review_date',
+            'version',
+            name='uix_portfolio_review_account_date_version',
+        ),
+        Index('ix_portfolio_review_account_date', 'account_id', 'review_date'),
+    )
+
+
 class ConversationMessage(Base):
     """
     Agent 对话历史记录表

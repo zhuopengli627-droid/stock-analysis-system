@@ -219,6 +219,33 @@ class PortfolioSnapshotResponse(BaseModel):
     accounts: List[PortfolioAccountSnapshot] = Field(default_factory=list)
 
 
+class PortfolioReviewCreateRequest(BaseModel):
+    account_id: Optional[int] = None
+    review_date: Optional[date] = None
+    cost_method: Literal["fifo", "avg"] = "fifo"
+    include_realtime: bool = False
+
+
+class PortfolioReviewItem(BaseModel):
+    id: int
+    account_id: Optional[int] = None
+    review_date: str
+    version: int
+    cost_method: str
+    generation_mode: str
+    data_quality: str
+    created_at: Optional[str] = None
+    payload: Optional[Dict[str, Any]] = None
+    markdown: Optional[str] = None
+
+
+class PortfolioReviewListResponse(BaseModel):
+    items: List[PortfolioReviewItem] = Field(default_factory=list)
+    total: int
+    page: int
+    page_size: int
+
+
 class PortfolioImportTradeItem(BaseModel):
     trade_date: str
     symbol: str

@@ -31,6 +31,9 @@ from api.v1.schemas.portfolio import (
     PortfolioImportTradeItem,
     PortfolioPositionAnalysisRequest,
     PortfolioRiskResponse,
+    PortfolioReviewCreateRequest,
+    PortfolioReviewItem,
+    PortfolioReviewListResponse,
     PortfolioSnapshotResponse,
     PortfolioTradeListResponse,
     PortfolioTradeCreateRequest,
@@ -38,6 +41,7 @@ from api.v1.schemas.portfolio import (
 from src.services.task_queue import get_task_queue
 from src.services.portfolio_import_service import PortfolioImportService
 from src.services.portfolio_risk_service import PortfolioRiskService
+from src.services.portfolio_review_service import PortfolioReviewService
 from src.services.portfolio_service import (
     PortfolioBusyError,
     PortfolioConflictError,
@@ -439,6 +443,73 @@ def get_snapshot(
         raise _bad_request(exc)
     except Exception as exc:
         raise _internal_error("Get snapshot failed", exc)
+
+
+@router.post(
+    "/reviews",
+    response_model=PortfolioReviewItem,
+    responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    summary="Generate and persist an account-level daily review",
+)
+def create_review(request: PortfolioReviewCreateRequest) -> PortfolioReviewItem:
+    try:
+        item = PortfolioReviewService().create_review(
+            account_id=request.account_id,
+            review_date=request.review_date,
+            cost_method=request.cost_method,
+            include_realtime=request.include_realtime,
+        )
+        return PortfolioReviewItem(**item)
+    except ValueError as exc:
+        raise _bad_request(exc)
+    except Exception as exc:
+        raise _internal_error("Create portfolio review failed", exc)
+
+
+@router.get(
+    "/reviews",
+    response_model=PortfolioReviewListResponse,
+    responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    summary="List immutable portfolio review versions",
+)
+def list_reviews(
+    account_id: Optional[int] = Query(None),
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> PortfolioReviewListResponse:
+    if date_from and date_to and date_from > date_to:
+        raise api_error(400, "validation_error", "date_from must be on or before date_to")
+    try:
+        data = PortfolioReviewService().list_reviews(
+            account_id=account_id,
+            date_from=date_from,
+            date_to=date_to,
+            page=page,
+            page_size=page_size,
+        )
+        return PortfolioReviewListResponse(**data)
+    except Exception as exc:
+        raise _internal_error("List portfolio reviews failed", exc)
+
+
+@router.get(
+    "/reviews/{review_id}",
+    response_model=PortfolioReviewItem,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    summary="Get one portfolio review version",
+)
+def get_review(review_id: int) -> PortfolioReviewItem:
+    try:
+        item = PortfolioReviewService().get_review(review_id)
+        if item is None:
+            raise api_error(404, "not_found", "Portfolio review not found")
+        return PortfolioReviewItem(**item)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _internal_error("Get portfolio review failed", exc)
 
 
 @router.post(

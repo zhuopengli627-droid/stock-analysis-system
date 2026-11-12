@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] 新增账户级每日持仓复盘 API，按日期追加保存规则版 Markdown 与结构化 JSON，记录行情来源、数据质量、集中度、回撤和持仓浮亏规则证据，历史版本不覆盖。
+
 - [改进] 持仓成交导入支持 CSV 和 XLSX；多工作表模板自动读取“成交导入”，映射数量、价格、券商成交编号及费用字段，并阻止多个账户混在同一次导入。
 
 - [文档] 恢复 README、部署指南及模型/搜索配置表中的 Anspire 可点击链接并保留推广码，继续作为 SerpAPI 后的可选搜索服务。

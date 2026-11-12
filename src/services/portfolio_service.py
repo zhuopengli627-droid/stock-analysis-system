@@ -1167,9 +1167,9 @@ class PortfolioService:
                     provider=provider,
                 )
 
-        close = self.repo.get_latest_close_with_date(symbol=symbol, as_of=as_of_date)
+        close = self.repo.get_latest_close_with_metadata(symbol=symbol, as_of=as_of_date)
         if close is not None:
-            close_price, close_date = close
+            close_price, close_date, provider = close
             if close_price > 0:
                 return _ResolvedPositionPrice(
                     price=float(close_price),
@@ -1177,6 +1177,7 @@ class PortfolioService:
                     price_date=close_date,
                     is_stale=close_date < as_of_date,
                     is_available=True,
+                    provider=provider,
                 )
 
         return _ResolvedPositionPrice(

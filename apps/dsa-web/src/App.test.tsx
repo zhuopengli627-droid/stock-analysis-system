@@ -31,6 +31,10 @@ vi.mock('./pages/HomePage', () => ({
   default: () => <div data-testid="home-page">Home</div>,
 }));
 
+vi.mock('./pages/PortfolioDashboardPage', () => ({
+  default: () => <div data-testid="portfolio-dashboard-page">Portfolio dashboard</div>,
+}));
+
 vi.mock('./pages/ChatPage', () => ({
   default: () => {
     if (chatPageShouldThrow.value) {
@@ -190,7 +194,7 @@ describe('App routing behavior', () => {
 
     render(<App />);
 
-    expect(await screen.findByTestId('home-page')).toBeInTheDocument();
+    expect(await screen.findByTestId('portfolio-dashboard-page')).toBeInTheDocument();
     expect(window.location.origin).toBe(origin);
     expect(window.location.pathname + window.location.search + window.location.hash).toBe('/');
   });
@@ -234,7 +238,7 @@ describe('App routing behavior', () => {
 
     render(<App />);
 
-    expect(await screen.findByTestId('home-page')).toBeInTheDocument();
+    expect(await screen.findByTestId('portfolio-dashboard-page')).toBeInTheDocument();
     expect(screen.queryByTestId('login-page')).not.toBeInTheDocument();
   });
 

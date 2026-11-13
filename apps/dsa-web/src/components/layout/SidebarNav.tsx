@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Activity, BarChart3, Bell, BriefcaseBusiness, Database, Gauge, Home, LogOut, MessageSquareQuote, Search, Settings2 } from 'lucide-react';
+import { Activity, BarChart3, Bell, BriefcaseBusiness, Database, Gauge, Home, LineChart, LogOut, MessageSquareQuote, Search, Settings2 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAgentChatStore } from '../../stores/agentChatStore';
@@ -28,6 +28,7 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { key: 'home', labelKey: 'layout.nav.home', to: '/', icon: Home, exact: true },
+  { key: 'market-review', labelKey: 'layout.nav.marketReview', to: '/market-review', icon: LineChart },
   { key: 'chat', labelKey: 'layout.nav.chat', to: '/chat', icon: MessageSquareQuote, badge: 'completion' },
   { key: 'screening', labelKey: 'layout.nav.screening', to: '/screening', icon: Search },
   { key: 'portfolio', labelKey: 'layout.nav.portfolio', to: '/portfolio', icon: BriefcaseBusiness },

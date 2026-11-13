@@ -27,12 +27,14 @@ vi.mock('../../theme/ThemeToggle', () => ({
 }));
 
 describe('SidebarNav', () => {
-  it('keeps screening directly after chat without requiring configuration', () => {
+  it('places investment overview and market review before the research tools', () => {
     render(<MemoryRouter initialEntries={['/']}><SidebarNav /></MemoryRouter>);
 
     expect(screen.getByRole('link', { name: '选股' })).toHaveAttribute('href', '/screening');
     const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
-    expect(hrefs.slice(0, 5)).toEqual(['/', '/chat', '/screening', '/portfolio', '/decision-signals']);
+    expect(hrefs.slice(0, 6)).toEqual(['/', '/market-review', '/chat', '/screening', '/portfolio', '/decision-signals']);
+    expect(screen.getByRole('link', { name: '投资总览' })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: '市场复盘' })).toHaveAttribute('href', '/market-review');
   });
 
   it('shows the shared completion badge only when chat completion is pending', () => {

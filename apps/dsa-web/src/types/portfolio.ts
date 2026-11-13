@@ -56,6 +56,29 @@ export interface PortfolioPositionAnalysisRequest {
   force?: boolean;
 }
 
+export interface PortfolioDiagnosisEvidenceItem {
+  code: string;
+  message: string;
+  source: string;
+}
+
+export interface PortfolioPositionDiagnosisResponse {
+  accountId: number;
+  accountName: string;
+  symbol: string;
+  status: 'stable' | 'attention' | 'risk_triggered' | 'data_incomplete';
+  validDate: string;
+  generationMode: 'deterministic_rules';
+  facts: Record<string, unknown>;
+  calculations: Record<string, unknown>;
+  thresholds: Record<string, number>;
+  supportingEvidence: PortfolioDiagnosisEvidenceItem[];
+  opposingEvidence: PortfolioDiagnosisEvidenceItem[];
+  riskTriggers: PortfolioDiagnosisEvidenceItem[];
+  watchItems: PortfolioDiagnosisEvidenceItem[];
+  missingData: string[];
+}
+
 export interface PortfolioAccountSnapshot {
   accountId: number;
   accountName: string;

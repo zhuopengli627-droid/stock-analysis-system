@@ -17,6 +17,7 @@ import type {
   PortfolioImportCommitResponse,
   PortfolioImportParseResponse,
   PortfolioPositionAnalysisRequest,
+  PortfolioPositionDiagnosisResponse,
   PortfolioReviewCreateRequest,
   PortfolioReviewItem,
   PortfolioReviewListResponse,
@@ -151,6 +152,24 @@ export const portfolioApi = {
       },
     );
     return toCamelCase<TaskAccepted>(response.data);
+  },
+
+  async getPositionDiagnosis(
+    symbol: string,
+    query: { accountId: number; asOf?: string; costMethod?: PortfolioCostMethod; includeRealtime?: boolean },
+  ): Promise<PortfolioPositionDiagnosisResponse> {
+    const response = await apiClient.get<Record<string, unknown>>(
+      `/api/v1/portfolio/positions/${encodeURIComponent(symbol)}/diagnosis`,
+      {
+        params: {
+          account_id: query.accountId,
+          as_of: query.asOf,
+          cost_method: query.costMethod ?? 'fifo',
+          include_realtime: query.includeRealtime ? 'true' : 'false',
+        },
+      },
+    );
+    return toCamelCase<PortfolioPositionDiagnosisResponse>(response.data);
   },
 
   async getRisk(query: SnapshotQuery = {}): Promise<PortfolioRiskResponse> {

@@ -17,10 +17,11 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { portfolioApi } from '../api/portfolio';
 import { getParsedApiError, type ParsedApiError } from '../api/error';
-import { ApiErrorAlert, Badge, Button, Card, EmptyState, InlineAlert, Loading } from '../components/common';
+import { ApiErrorAlert, Badge, Button, Card, Drawer, EmptyState, InlineAlert, Loading } from '../components/common';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
 import type {
   PortfolioPositionItem,
+  PortfolioPositionDiagnosisResponse,
   PortfolioReviewItem,
   PortfolioReviewVerificationItem,
   PortfolioRiskResponse,
@@ -93,6 +94,21 @@ type DashboardTexts = {
   fxStale: string;
   qualityOk: string;
   qualityPartial: string;
+  viewDiagnosis: string;
+  diagnosisTitle: string;
+  loadingDiagnosis: string;
+  deterministicRules: string;
+  validDate: string;
+  factsAndCalculations: string;
+  supportingEvidence: string;
+  opposingEvidence: string;
+  riskTriggers: string;
+  watchItems: string;
+  missingData: string;
+  noEvidence: string;
+  averageCost: string;
+  positionWeight: string;
+  priceSource: string;
 };
 
 const DASHBOARD_TEXT: Record<'zh' | 'en', DashboardTexts> = {
@@ -156,6 +172,21 @@ const DASHBOARD_TEXT: Record<'zh' | 'en', DashboardTexts> = {
     fxStale: '汇率存在过期或回退数据',
     qualityOk: '完整',
     qualityPartial: '部分可用',
+    viewDiagnosis: '查看诊断',
+    diagnosisTitle: '持仓结构化诊断',
+    loadingDiagnosis: '加载诊断中',
+    deterministicRules: '确定性规则',
+    validDate: '结论有效日期',
+    factsAndCalculations: '事实与计算结果',
+    supportingEvidence: '支持继续持有的证据',
+    opposingEvidence: '反对继续持有的证据',
+    riskTriggers: '风险触发条件',
+    watchItems: '下一交易日观察事项',
+    missingData: '缺失的数据',
+    noEvidence: '当前无对应证据。',
+    averageCost: '平均成本',
+    positionWeight: '账户持仓权重',
+    priceSource: '价格来源',
   },
   en: {
     title: 'Investment overview',
@@ -217,7 +248,32 @@ const DASHBOARD_TEXT: Record<'zh' | 'en', DashboardTexts> = {
     fxStale: 'FX data contains stale or fallback rates',
     qualityOk: 'Complete',
     qualityPartial: 'Partial',
+    viewDiagnosis: 'View diagnosis',
+    diagnosisTitle: 'Structured position diagnosis',
+    loadingDiagnosis: 'Loading diagnosis',
+    deterministicRules: 'Deterministic rules',
+    validDate: 'Valid date',
+    factsAndCalculations: 'Facts and calculations',
+    supportingEvidence: 'Evidence supporting the position',
+    opposingEvidence: 'Evidence opposing the position',
+    riskTriggers: 'Risk triggers',
+    watchItems: 'Next-session watch items',
+    missingData: 'Missing data',
+    noEvidence: 'No evidence in this category.',
+    averageCost: 'Average cost',
+    positionWeight: 'Account position weight',
+    priceSource: 'Price source',
   },
+};
+
+const MISSING_DATA_LABELS: Record<string, { zh: string; en: string }> = {
+  buy_thesis: { zh: '买入逻辑', en: 'Buy thesis' },
+  target_holding_period: { zh: '目标持有周期', en: 'Target holding period' },
+  invalidation_condition: { zh: '计划失效条件', en: 'Invalidation condition' },
+  risk_budget: { zh: '风险预算', en: 'Risk budget' },
+  position_limit: { zh: '仓位限制', en: 'Position limit' },
+  add_reduce_conditions: { zh: '加减仓观察条件', en: 'Add/reduce conditions' },
+  current_price: { zh: '当前可用价格', en: 'Current usable price' },
 };
 
 function verificationLabel(status: string | undefined, language: 'zh' | 'en'): string {
@@ -250,6 +306,46 @@ function positionStatus(row: DashboardPosition, text: DashboardTexts): {
   return { label: text.stable, variant: 'success' };
 }
 
+function readNumber(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function readText(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === 'string' && value.trim() ? value : '--';
+}
+
+function diagnosisStatusView(
+  status: PortfolioPositionDiagnosisResponse['status'],
+  text: DashboardTexts,
+): { label: string; variant: 'success' | 'warning' | 'danger' } {
+  if (status === 'stable') return { label: text.stable, variant: 'success' };
+  if (status === 'attention') return { label: text.observe, variant: 'warning' };
+  if (status === 'risk_triggered') return { label: text.riskTriggered, variant: 'danger' };
+  return { label: text.priceMissing, variant: 'danger' };
+}
+
+const EvidenceList: React.FC<{
+  title: string;
+  items: PortfolioPositionDiagnosisResponse['supportingEvidence'];
+  emptyLabel: string;
+}> = ({ title, items, emptyLabel }) => (
+  <section className="rounded-2xl border border-border/60 bg-surface/40 p-4">
+    <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+    {items.length ? (
+      <ul className="mt-3 space-y-2">
+        {items.map((item) => (
+          <li key={`${item.code}-${item.source}`} className="rounded-xl border border-border/50 bg-card/60 px-3 py-2.5">
+            <p className="text-sm leading-5 text-foreground">{item.message}</p>
+            <p className="mt-1 break-all font-mono text-[11px] text-muted-text">{item.source}</p>
+          </li>
+        ))}
+      </ul>
+    ) : <p className="mt-3 text-sm text-secondary-text">{emptyLabel}</p>}
+  </section>
+);
+
 const PortfolioDashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const { language } = useUiLanguage();
@@ -263,6 +359,10 @@ const PortfolioDashboardPage: React.FC = () => {
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<ParsedApiError | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  const [selectedPosition, setSelectedPosition] = useState<DashboardPosition | null>(null);
+  const [diagnosis, setDiagnosis] = useState<PortfolioPositionDiagnosisResponse | null>(null);
+  const [diagnosisLoading, setDiagnosisLoading] = useState(false);
+  const [diagnosisError, setDiagnosisError] = useState<ParsedApiError | null>(null);
 
   const loadDashboard = useCallback(async () => {
     await Promise.resolve();
@@ -365,6 +465,26 @@ const PortfolioDashboardPage: React.FC = () => {
       setError(getParsedApiError(caught));
     } finally {
       setVerifying(false);
+    }
+  };
+
+  const handleOpenDiagnosis = async (row: DashboardPosition) => {
+    setSelectedPosition(row);
+    setDiagnosis(null);
+    setDiagnosisError(null);
+    setDiagnosisLoading(true);
+    try {
+      const result = await portfolioApi.getPositionDiagnosis(row.symbol, {
+        accountId: row.accountId,
+        asOf: snapshot?.asOf,
+        costMethod: snapshot?.costMethod ?? 'fifo',
+        includeRealtime: false,
+      });
+      setDiagnosis(result);
+    } catch (caught) {
+      setDiagnosisError(getParsedApiError(caught));
+    } finally {
+      setDiagnosisLoading(false);
     }
   };
 
@@ -480,7 +600,16 @@ const PortfolioDashboardPage: React.FC = () => {
                           <div>{formatMoney(row.unrealizedPnlBase, row.valuationCurrency)}</div>
                           <div className="mt-1 text-xs">{formatSignedPct(row.unrealizedPnlPct)}</div>
                         </td>
-                        <td className="px-5 py-3.5 text-right"><Badge variant={status.variant}>{status.label}</Badge></td>
+                        <td className="px-5 py-3.5 text-right">
+                          <Badge variant={status.variant}>{status.label}</Badge>
+                          <button
+                            type="button"
+                            className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-cyan transition-colors hover:text-foreground"
+                            onClick={() => void handleOpenDiagnosis(row)}
+                          >
+                            {text.viewDiagnosis}<ArrowRight className="h-3.5 w-3.5" />
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -598,6 +727,68 @@ const PortfolioDashboardPage: React.FC = () => {
           <div className="mt-4 rounded-2xl border border-dashed border-border/60 px-4 py-6 text-center text-sm text-secondary-text">{text.noReview}</div>
         )}
       </Card>
+
+      <Drawer
+        isOpen={selectedPosition !== null}
+        onClose={() => {
+          setSelectedPosition(null);
+          setDiagnosis(null);
+          setDiagnosisError(null);
+        }}
+        title={selectedPosition ? `${text.diagnosisTitle} · ${selectedPosition.symbol}` : text.diagnosisTitle}
+        width="max-w-3xl"
+      >
+        {diagnosisLoading ? <Loading label={text.loadingDiagnosis} /> : null}
+        {diagnosisError ? <ApiErrorAlert error={diagnosisError} /> : null}
+        {diagnosis ? (() => {
+          const status = diagnosisStatusView(diagnosis.status, text);
+          const currency = selectedPosition?.valuationCurrency ?? snapshot?.currency ?? 'CNY';
+          return (
+            <div className="space-y-4" data-testid="portfolio-position-diagnosis">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={status.variant}>{status.label}</Badge>
+                <Badge variant="info">{text.deterministicRules}</Badge>
+                <span className="text-xs text-secondary-text">{text.validDate}: {diagnosis.validDate}</span>
+              </div>
+
+              <section className="rounded-2xl border border-border/60 bg-surface/40 p-4">
+                <h3 className="text-sm font-semibold text-foreground">{text.factsAndCalculations}</h3>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {[
+                    [text.quantity, readNumber(diagnosis.facts, 'quantity')?.toLocaleString('zh-CN') ?? '--'],
+                    [text.averageCost, formatMoney(readNumber(diagnosis.facts, 'avgCost'), currency)],
+                    [text.price, formatMoney(readNumber(diagnosis.facts, 'lastPrice'), currency)],
+                    [text.priceSource, `${readText(diagnosis.facts, 'priceProvider')} · ${readText(diagnosis.facts, 'priceDate')}`],
+                    [text.value, formatMoney(readNumber(diagnosis.calculations, 'marketValue'), currency)],
+                    [text.pnl, `${formatMoney(readNumber(diagnosis.calculations, 'unrealizedPnl'), currency)} · ${formatSignedPct(readNumber(diagnosis.calculations, 'unrealizedPnlPct'))}`],
+                    [text.positionWeight, formatPct(readNumber(diagnosis.calculations, 'positionWeightPct'))],
+                    [text.account, diagnosis.accountName || String(diagnosis.accountId)],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-xl border border-border/50 bg-card/60 px-3 py-2.5">
+                      <p className="text-xs text-muted-text">{label}</p>
+                      <p className="mt-1 text-sm font-semibold text-foreground">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <EvidenceList title={text.supportingEvidence} items={diagnosis.supportingEvidence} emptyLabel={text.noEvidence} />
+              <EvidenceList title={text.opposingEvidence} items={diagnosis.opposingEvidence} emptyLabel={text.noEvidence} />
+              <EvidenceList title={text.riskTriggers} items={diagnosis.riskTriggers} emptyLabel={text.noEvidence} />
+              <EvidenceList title={text.watchItems} items={diagnosis.watchItems} emptyLabel={text.noEvidence} />
+
+              <section className="rounded-2xl border border-warning/20 bg-warning/5 p-4">
+                <h3 className="text-sm font-semibold text-foreground">{text.missingData}</h3>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {diagnosis.missingData.map((item) => (
+                    <Badge key={item} variant="warning">{MISSING_DATA_LABELS[item]?.[language] ?? item}</Badge>
+                  ))}
+                </div>
+              </section>
+            </div>
+          );
+        })() : null}
+      </Drawer>
     </div>
   );
 };

@@ -995,6 +995,39 @@ class PortfolioApiTestCase(unittest.TestCase):
         resp = self.client.get("/api/v1/portfolio/trades", params={"page_size": 101})
         self.assertEqual(resp.status_code, 422)
 
+    def test_position_diagnosis_endpoint_returns_traceable_rules(self) -> None:
+        account_id = self._create_position()
+
+        resp = self.client.get(
+            "/api/v1/portfolio/positions/600519/diagnosis",
+            params={
+                "account_id": account_id,
+                "as_of": "2026-01-03",
+                "include_realtime": "false",
+            },
+        )
+
+        self.assertEqual(resp.status_code, 200, resp.text)
+        payload = resp.json()
+        self.assertEqual(payload["account_id"], account_id)
+        self.assertEqual(payload["symbol"], "600519")
+        self.assertEqual(payload["valid_date"], "2026-01-03")
+        self.assertEqual(payload["generation_mode"], "deterministic_rules")
+        self.assertEqual(payload["facts"]["price_provider"], "portfolio-api-test")
+        self.assertEqual(payload["calculations"]["unrealized_pnl_pct"], 10.0)
+        self.assertIn("position_limit", payload["missing_data"])
+
+    def test_position_diagnosis_endpoint_returns_404_for_unheld_symbol(self) -> None:
+        account_id = self._create_position()
+
+        resp = self.client.get(
+            "/api/v1/portfolio/positions/000001/diagnosis",
+            params={"account_id": account_id, "as_of": "2026-01-03"},
+        )
+
+        self.assertEqual(resp.status_code, 404, resp.text)
+        self.assertEqual(resp.json()["error"], "not_found")
+
 
 if __name__ == "__main__":
     unittest.main()

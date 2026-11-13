@@ -176,6 +176,29 @@ class PortfolioPositionAnalysisRequest(BaseModel):
     force: bool = Field(False, description="Force refresh analysis inputs without bypassing duplicate in-flight tasks")
 
 
+class PortfolioDiagnosisEvidenceItem(BaseModel):
+    code: str
+    message: str
+    source: str
+
+
+class PortfolioPositionDiagnosisResponse(BaseModel):
+    account_id: int
+    account_name: str
+    symbol: str
+    status: Literal["stable", "attention", "risk_triggered", "data_incomplete"]
+    valid_date: str
+    generation_mode: Literal["deterministic_rules"] = "deterministic_rules"
+    facts: Dict[str, Any] = Field(default_factory=dict)
+    calculations: Dict[str, Any] = Field(default_factory=dict)
+    thresholds: Dict[str, float] = Field(default_factory=dict)
+    supporting_evidence: List[PortfolioDiagnosisEvidenceItem] = Field(default_factory=list)
+    opposing_evidence: List[PortfolioDiagnosisEvidenceItem] = Field(default_factory=list)
+    risk_triggers: List[PortfolioDiagnosisEvidenceItem] = Field(default_factory=list)
+    watch_items: List[PortfolioDiagnosisEvidenceItem] = Field(default_factory=list)
+    missing_data: List[str] = Field(default_factory=list)
+
+
 class PortfolioAccountSnapshot(BaseModel):
     account_id: int
     account_name: str

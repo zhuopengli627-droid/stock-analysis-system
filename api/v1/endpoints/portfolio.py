@@ -30,6 +30,7 @@ from api.v1.schemas.portfolio import (
     PortfolioImportParseResponse,
     PortfolioImportTradeItem,
     PortfolioPositionAnalysisRequest,
+    PortfolioPositionDiagnosisResponse,
     PortfolioRiskResponse,
     PortfolioReviewCreateRequest,
     PortfolioReviewItem,
@@ -603,6 +604,38 @@ def analyze_position(symbol: str, request: PortfolioPositionAnalysisRequest) -> 
         analysis_phase=task.analysis_phase,
     )
     return response
+
+
+@router.get(
+    "/positions/{symbol}/diagnosis",
+    response_model=PortfolioPositionDiagnosisResponse,
+    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    summary="Get deterministic diagnosis for one held portfolio position",
+)
+def get_position_diagnosis(
+    symbol: str,
+    account_id: int = Query(..., ge=1, description="Account id that owns the position"),
+    as_of: Optional[date] = Query(None, description="Diagnosis date, default today"),
+    cost_method: str = Query("fifo", description="Cost method: fifo or avg"),
+    include_realtime: bool = Query(False, description="Whether to fetch realtime quotes"),
+) -> PortfolioPositionDiagnosisResponse:
+    try:
+        item = PortfolioRiskService().get_position_diagnosis(
+            account_id=account_id,
+            symbol=symbol,
+            as_of=as_of,
+            cost_method=cost_method,
+            include_realtime=include_realtime,
+        )
+        if item is None:
+            raise api_error(404, "not_found", f"Position not found: account={account_id}, symbol={symbol}")
+        return PortfolioPositionDiagnosisResponse(**item)
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise _bad_request(exc)
+    except Exception as exc:
+        raise _internal_error("Get portfolio position diagnosis failed", exc)
 
 
 def _resolve_position_analysis_context(

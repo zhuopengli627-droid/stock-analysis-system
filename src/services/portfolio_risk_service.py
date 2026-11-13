@@ -109,6 +109,268 @@ class PortfolioRiskService:
             "decision_signal_risk": decision_signal_risk,
         }
 
+    def get_position_diagnosis(
+        self,
+        *,
+        account_id: int,
+        symbol: str,
+        as_of: Optional[date] = None,
+        cost_method: str = "fifo",
+        include_realtime: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        """Build a deterministic diagnosis for one held position."""
+        as_of_date = as_of or date.today()
+        target = self.portfolio_service._normalize_symbol_for_position(symbol)
+        if not target:
+            raise ValueError("symbol must not be empty")
+
+        snapshot = self.portfolio_service.get_portfolio_snapshot(
+            account_id=account_id,
+            as_of=as_of_date,
+            cost_method=cost_method,
+            include_realtime=include_realtime,
+        )
+        account = next(
+            (
+                item
+                for item in snapshot.get("accounts", [])
+                if int(item.get("account_id") or 0) == int(account_id)
+            ),
+            None,
+        )
+        if account is None:
+            return None
+
+        position = next(
+            (
+                item
+                for item in account.get("positions", [])
+                if self.portfolio_service._normalize_symbol_for_position(
+                    str(item.get("symbol") or "")
+                ) == target
+            ),
+            None,
+        )
+        if position is None:
+            return None
+
+        concentration_threshold = float(
+            getattr(self.config, "portfolio_risk_concentration_alert_pct", 35.0)
+        )
+        stop_loss_threshold = float(
+            getattr(self.config, "portfolio_risk_stop_loss_alert_pct", 10.0)
+        )
+        stop_loss_near_ratio = float(
+            getattr(self.config, "portfolio_risk_stop_loss_near_ratio", 0.8)
+        )
+        stop_loss_near_threshold = stop_loss_threshold * stop_loss_near_ratio
+
+        market_value = float(position.get("market_value_base") or 0.0)
+        account_market_value = float(account.get("total_market_value") or 0.0)
+        position_weight_pct = (
+            market_value / account_market_value * 100.0
+            if account_market_value > 0
+            else None
+        )
+        pnl_pct_raw = position.get("unrealized_pnl_pct")
+        pnl_pct = float(pnl_pct_raw) if pnl_pct_raw is not None else None
+        loss_pct = max(0.0, -pnl_pct) if pnl_pct is not None else None
+        last_price = float(position.get("last_price") or 0.0)
+        price_available = bool(position.get("price_available", True)) and (
+            str(position.get("price_source") or "") != "missing"
+        ) and last_price > 0
+        price_stale = bool(position.get("price_stale")) if price_available else False
+        concentration_triggered = (
+            position_weight_pct is not None
+            and position_weight_pct >= concentration_threshold
+        )
+        stop_loss_triggered = (
+            loss_pct is not None and loss_pct >= stop_loss_threshold
+        )
+        stop_loss_near = (
+            loss_pct is not None
+            and loss_pct >= stop_loss_near_threshold
+            and not stop_loss_triggered
+        )
+
+        supporting_evidence: List[Dict[str, str]] = []
+        opposing_evidence: List[Dict[str, str]] = []
+        risk_triggers: List[Dict[str, str]] = []
+        watch_items: List[Dict[str, str]] = []
+
+        if price_available and not price_stale:
+            supporting_evidence.append({
+                "code": "price_fresh",
+                "message": "价格数据可用且未标记陈旧。",
+                "source": "portfolio_snapshot.position.price",
+            })
+        if pnl_pct is not None and pnl_pct >= 0:
+            supporting_evidence.append({
+                "code": "price_not_below_cost",
+                "message": "当前估值价格不低于持仓成本。",
+                "source": "portfolio_snapshot.position.unrealized_pnl_pct",
+            })
+        if price_available and position_weight_pct is not None and not concentration_triggered:
+            supporting_evidence.append({
+                "code": "within_concentration_limit",
+                "message": "该持仓未触发账户单一持仓集中度阈值。",
+                "source": "portfolio_rule.concentration",
+            })
+
+        if not price_available:
+            opposing_evidence.append({
+                "code": "price_unavailable",
+                "message": "当前持仓缺少可用价格，盈亏和风险判断不完整。",
+                "source": "portfolio_snapshot.position.price",
+            })
+            risk_triggers.append({
+                "code": "price_unavailable",
+                "message": "价格不可用。",
+                "source": "portfolio_snapshot.position.price",
+            })
+            watch_items.append({
+                "code": "resolve_missing_price",
+                "message": "补齐行情后重新生成诊断。",
+                "source": "portfolio_snapshot.position.price",
+            })
+        elif price_stale:
+            opposing_evidence.append({
+                "code": "price_stale",
+                "message": "当前估值使用陈旧价格。",
+                "source": "portfolio_snapshot.position.price_date",
+            })
+            risk_triggers.append({
+                "code": "price_stale",
+                "message": "价格数据已陈旧。",
+                "source": "portfolio_snapshot.position.price_date",
+            })
+            watch_items.append({
+                "code": "refresh_stale_price",
+                "message": "下一交易日确认最新收盘价或实时价。",
+                "source": "portfolio_snapshot.position.price_date",
+            })
+
+        if pnl_pct is not None and pnl_pct < 0:
+            opposing_evidence.append({
+                "code": "price_below_cost",
+                "message": "当前估值价格低于持仓成本。",
+                "source": "portfolio_snapshot.position.unrealized_pnl_pct",
+            })
+        if concentration_triggered:
+            opposing_evidence.append({
+                "code": "concentration_limit_exceeded",
+                "message": "该持仓触发账户单一持仓集中度阈值。",
+                "source": "portfolio_rule.concentration",
+            })
+            risk_triggers.append({
+                "code": "concentration_limit_exceeded",
+                "message": "单一持仓集中度超限。",
+                "source": "portfolio_rule.concentration",
+            })
+            watch_items.append({
+                "code": "review_position_concentration",
+                "message": "复核该持仓的仓位上限和减仓条件。",
+                "source": "portfolio_rule.concentration",
+            })
+        if stop_loss_triggered:
+            opposing_evidence.append({
+                "code": "stop_loss_triggered",
+                "message": "浮亏幅度已触发确定性止损阈值。",
+                "source": "portfolio_rule.stop_loss",
+            })
+            risk_triggers.append({
+                "code": "stop_loss_triggered",
+                "message": "止损阈值已触发。",
+                "source": "portfolio_rule.stop_loss",
+            })
+            watch_items.append({
+                "code": "review_stop_loss_execution",
+                "message": "检查原交易计划并记录止损规则的执行决定。",
+                "source": "portfolio_rule.stop_loss",
+            })
+        elif stop_loss_near:
+            opposing_evidence.append({
+                "code": "stop_loss_near",
+                "message": "浮亏幅度接近确定性止损阈值。",
+                "source": "portfolio_rule.stop_loss",
+            })
+            risk_triggers.append({
+                "code": "stop_loss_near",
+                "message": "接近止损阈值。",
+                "source": "portfolio_rule.stop_loss",
+            })
+            watch_items.append({
+                "code": "monitor_stop_loss_distance",
+                "message": "下一交易日检查价格与止损阈值距离。",
+                "source": "portfolio_rule.stop_loss",
+            })
+
+        if not price_available:
+            status = "data_incomplete"
+        elif stop_loss_triggered:
+            status = "risk_triggered"
+        elif price_stale or concentration_triggered or stop_loss_near:
+            status = "attention"
+        else:
+            status = "stable"
+
+        missing_data = [
+            "buy_thesis",
+            "target_holding_period",
+            "invalidation_condition",
+            "risk_budget",
+            "position_limit",
+            "add_reduce_conditions",
+        ]
+        if not price_available:
+            missing_data.append("current_price")
+
+        return {
+            "account_id": int(account_id),
+            "account_name": str(account.get("account_name") or ""),
+            "symbol": str(position.get("symbol") or target),
+            "status": status,
+            "valid_date": as_of_date.isoformat(),
+            "generation_mode": "deterministic_rules",
+            "facts": {
+                "market": position.get("market"),
+                "currency": position.get("currency"),
+                "quantity": float(position.get("quantity") or 0.0),
+                "avg_cost": float(position.get("avg_cost") or 0.0),
+                "last_price": last_price if price_available else None,
+                "price_source": position.get("price_source"),
+                "price_provider": position.get("price_provider"),
+                "price_date": position.get("price_date"),
+                "price_available": price_available,
+                "price_stale": price_stale,
+            },
+            "calculations": {
+                "total_cost": float(position.get("total_cost") or 0.0),
+                "market_value": market_value if price_available else None,
+                "unrealized_pnl": (
+                    float(position.get("unrealized_pnl_base") or 0.0)
+                    if price_available
+                    else None
+                ),
+                "unrealized_pnl_pct": pnl_pct if price_available else None,
+                "position_weight_pct": (
+                    round(position_weight_pct, 4)
+                    if position_weight_pct is not None and price_available
+                    else None
+                ),
+            },
+            "thresholds": {
+                "concentration_alert_pct": concentration_threshold,
+                "stop_loss_alert_pct": stop_loss_threshold,
+                "stop_loss_near_pct": stop_loss_near_threshold,
+            },
+            "supporting_evidence": supporting_evidence,
+            "opposing_evidence": opposing_evidence,
+            "risk_triggers": risk_triggers,
+            "watch_items": watch_items,
+            "missing_data": missing_data,
+        }
+
     def _build_decision_signal_risk(
         self,
         snapshot: Dict[str, Any],

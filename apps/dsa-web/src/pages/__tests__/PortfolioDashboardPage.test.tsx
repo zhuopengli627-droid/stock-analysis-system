@@ -13,6 +13,7 @@ const {
   listReviewVerifications,
   createReview,
   verifyReview,
+  getPositionDiagnosis,
 } = vi.hoisted(() => ({
   getSnapshot: vi.fn(),
   getRisk: vi.fn(),
@@ -21,6 +22,7 @@ const {
   listReviewVerifications: vi.fn(),
   createReview: vi.fn(),
   verifyReview: vi.fn(),
+  getPositionDiagnosis: vi.fn(),
 }));
 
 vi.mock('../../api/portfolio', () => ({
@@ -32,6 +34,7 @@ vi.mock('../../api/portfolio', () => ({
     listReviewVerifications,
     createReview,
     verifyReview,
+    getPositionDiagnosis,
   },
 }));
 
@@ -132,6 +135,37 @@ beforeEach(() => {
   getRisk.mockResolvedValue(makeRisk());
   listReviews.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20 });
   createReview.mockResolvedValue({ id: 9 });
+  getPositionDiagnosis.mockResolvedValue({
+    accountId: 1,
+    accountName: '主账户',
+    symbol: '600519',
+    status: 'attention',
+    validDate: '2026-11-13',
+    generationMode: 'deterministic_rules',
+    facts: {
+      quantity: 100,
+      avgCost: 1580,
+      lastPrice: 1500,
+      priceProvider: 'akshare',
+      priceDate: '2026-11-13',
+    },
+    calculations: {
+      marketValue: 150_000,
+      unrealizedPnl: -8_000,
+      unrealizedPnlPct: -5.06,
+      positionWeightPct: 83.33,
+    },
+    thresholds: {
+      concentrationAlertPct: 35,
+      stopLossAlertPct: 10,
+      stopLossNearPct: 8,
+    },
+    supportingEvidence: [{ code: 'price_fresh', message: '价格数据可用且未标记陈旧。', source: 'portfolio_snapshot.position.price' }],
+    opposingEvidence: [{ code: 'concentration_limit_exceeded', message: '该持仓触发账户单一持仓集中度阈值。', source: 'portfolio_rule.concentration' }],
+    riskTriggers: [{ code: 'concentration_limit_exceeded', message: '单一持仓集中度超限。', source: 'portfolio_rule.concentration' }],
+    watchItems: [{ code: 'review_position_concentration', message: '复核该持仓的仓位和原交易计划。', source: 'portfolio_rule.concentration' }],
+    missingData: ['buy_thesis', 'risk_budget'],
+  });
 });
 
 describe('PortfolioDashboardPage', () => {
@@ -179,6 +213,26 @@ describe('PortfolioDashboardPage', () => {
 
     await waitFor(() => expect(createReview).toHaveBeenCalledWith({ includeRealtime: false }));
     await waitFor(() => expect(getSnapshot).toHaveBeenCalledTimes(2));
+  });
+
+  it('opens a traceable deterministic diagnosis for a held position', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: '投资总览' });
+
+    fireEvent.click(screen.getByRole('button', { name: /查看诊断/ }));
+
+    expect(await screen.findByTestId('portfolio-position-diagnosis')).toBeInTheDocument();
+    expect(screen.getByText('确定性规则')).toBeInTheDocument();
+    expect(screen.getByText('该持仓触发账户单一持仓集中度阈值。')).toBeInTheDocument();
+    expect(screen.getAllByText('portfolio_rule.concentration')).toHaveLength(3);
+    expect(screen.getByText('买入逻辑')).toBeInTheDocument();
+    expect(screen.getByText('风险预算')).toBeInTheDocument();
+    expect(getPositionDiagnosis).toHaveBeenCalledWith('600519', {
+      accountId: 1,
+      asOf: '2026-11-13',
+      costMethod: 'fifo',
+      includeRealtime: false,
+    });
   });
 
   it('loads and verifies the latest immutable review', async () => {

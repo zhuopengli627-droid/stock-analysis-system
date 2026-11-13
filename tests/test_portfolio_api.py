@@ -1028,6 +1028,39 @@ class PortfolioApiTestCase(unittest.TestCase):
         self.assertEqual(resp.status_code, 404, resp.text)
         self.assertEqual(resp.json()["error"], "not_found")
 
+    def test_strategy_profile_round_trip_and_diagnosis_integration(self) -> None:
+        account_id = self._create_position()
+        saved = self.client.put(
+            "/api/v1/portfolio/positions/600519/strategy-profile",
+            params={"account_id": account_id},
+            json={
+                "buy_thesis": "现金流改善",
+                "target_holding_period": "6 months",
+                "invalidation_condition": "收入连续下降",
+                "risk_budget_pct": 3.5,
+                "position_limit_pct": 100,
+                "add_conditions": "回踩支撑",
+                "reduce_conditions": "失效条件触发",
+            },
+        )
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()["buy_thesis"], "现金流改善")
+
+        loaded = self.client.get(
+            "/api/v1/portfolio/positions/600519/strategy-profile",
+            params={"account_id": account_id},
+        )
+        self.assertEqual(loaded.status_code, 200, loaded.text)
+        self.assertEqual(loaded.json()["position_limit_pct"], 100)
+
+        diagnosis = self.client.get(
+            "/api/v1/portfolio/positions/600519/diagnosis",
+            params={"account_id": account_id, "as_of": "2026-01-03", "include_realtime": "false"},
+        )
+        self.assertEqual(diagnosis.status_code, 200, diagnosis.text)
+        self.assertEqual(diagnosis.json()["missing_data"], [])
+        self.assertEqual(diagnosis.json()["strategy_profile"]["risk_budget_pct"], 3.5)
+
 
 if __name__ == "__main__":
     unittest.main()

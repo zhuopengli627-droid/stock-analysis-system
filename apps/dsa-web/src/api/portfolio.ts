@@ -24,6 +24,8 @@ import type {
   PortfolioReviewVerificationItem,
   PortfolioReviewVerificationListResponse,
   PortfolioRiskResponse,
+  PortfolioStrategyProfileItem,
+  PortfolioStrategyProfilePayload,
   PortfolioSnapshotResponse,
   PortfolioTradeCreateRequest,
   PortfolioTradeListResponse,
@@ -170,6 +172,41 @@ export const portfolioApi = {
       },
     );
     return toCamelCase<PortfolioPositionDiagnosisResponse>(response.data);
+  },
+
+  async getStrategyProfile(accountId: number, symbol: string): Promise<PortfolioStrategyProfileItem | null> {
+    try {
+      const response = await apiClient.get<Record<string, unknown>>(
+        `/api/v1/portfolio/positions/${encodeURIComponent(symbol)}/strategy-profile`,
+        { params: { account_id: accountId } },
+      );
+      return toCamelCase<PortfolioStrategyProfileItem>(response.data);
+    } catch (error) {
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (status === 404) return null;
+      throw error;
+    }
+  },
+
+  async saveStrategyProfile(
+    accountId: number,
+    symbol: string,
+    payload: PortfolioStrategyProfilePayload,
+  ): Promise<PortfolioStrategyProfileItem> {
+    const response = await apiClient.put<Record<string, unknown>>(
+      `/api/v1/portfolio/positions/${encodeURIComponent(symbol)}/strategy-profile`,
+      {
+        buy_thesis: payload.buyThesis || null,
+        target_holding_period: payload.targetHoldingPeriod || null,
+        invalidation_condition: payload.invalidationCondition || null,
+        risk_budget_pct: payload.riskBudgetPct ?? null,
+        position_limit_pct: payload.positionLimitPct ?? null,
+        add_conditions: payload.addConditions || null,
+        reduce_conditions: payload.reduceConditions || null,
+      },
+      { params: { account_id: accountId } },
+    );
+    return toCamelCase<PortfolioStrategyProfileItem>(response.data);
   },
 
   async getRisk(query: SnapshotQuery = {}): Promise<PortfolioRiskResponse> {

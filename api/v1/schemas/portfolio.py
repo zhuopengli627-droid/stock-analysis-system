@@ -189,6 +189,7 @@ class PortfolioPositionDiagnosisResponse(BaseModel):
     status: Literal["stable", "attention", "risk_triggered", "data_incomplete"]
     valid_date: str
     generation_mode: Literal["deterministic_rules"] = "deterministic_rules"
+    strategy_profile: Dict[str, Any] = Field(default_factory=dict)
     facts: Dict[str, Any] = Field(default_factory=dict)
     calculations: Dict[str, Any] = Field(default_factory=dict)
     thresholds: Dict[str, float] = Field(default_factory=dict)
@@ -197,6 +198,24 @@ class PortfolioPositionDiagnosisResponse(BaseModel):
     risk_triggers: List[PortfolioDiagnosisEvidenceItem] = Field(default_factory=list)
     watch_items: List[PortfolioDiagnosisEvidenceItem] = Field(default_factory=list)
     missing_data: List[str] = Field(default_factory=list)
+
+
+class PortfolioStrategyProfileRequest(BaseModel):
+    buy_thesis: Optional[str] = Field(None, max_length=4000)
+    target_holding_period: Optional[str] = Field(None, max_length=128)
+    invalidation_condition: Optional[str] = Field(None, max_length=2000)
+    risk_budget_pct: Optional[float] = Field(None, ge=0, le=100)
+    position_limit_pct: Optional[float] = Field(None, ge=0, le=100)
+    add_conditions: Optional[str] = Field(None, max_length=2000)
+    reduce_conditions: Optional[str] = Field(None, max_length=2000)
+
+
+class PortfolioStrategyProfileItem(PortfolioStrategyProfileRequest):
+    id: int
+    account_id: int
+    symbol: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
 
 class PortfolioAccountSnapshot(BaseModel):

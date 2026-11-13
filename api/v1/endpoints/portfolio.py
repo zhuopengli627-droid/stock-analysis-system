@@ -39,6 +39,8 @@ from api.v1.schemas.portfolio import (
     PortfolioReviewVerificationItem,
     PortfolioReviewVerificationListResponse,
     PortfolioSnapshotResponse,
+    PortfolioStrategyProfileItem,
+    PortfolioStrategyProfileRequest,
     PortfolioTradeListResponse,
     PortfolioTradeCreateRequest,
 )
@@ -636,6 +638,57 @@ def get_position_diagnosis(
         raise _bad_request(exc)
     except Exception as exc:
         raise _internal_error("Get portfolio position diagnosis failed", exc)
+
+
+@router.get(
+    "/positions/{symbol}/strategy-profile",
+    response_model=PortfolioStrategyProfileItem,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    summary="Get the user-authored strategy profile for a held symbol",
+)
+def get_position_strategy_profile(
+    symbol: str,
+    account_id: int = Query(..., ge=1),
+) -> PortfolioStrategyProfileItem:
+    try:
+        item = PortfolioService().get_strategy_profile(account_id=account_id, symbol=symbol)
+        if item is None:
+            raise api_error(404, "not_found", f"Strategy profile not found: account={account_id}, symbol={symbol}")
+        return PortfolioStrategyProfileItem(**item)
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise _bad_request(exc)
+    except Exception as exc:
+        raise _internal_error("Get portfolio strategy profile failed", exc)
+
+
+@router.put(
+    "/positions/{symbol}/strategy-profile",
+    response_model=PortfolioStrategyProfileItem,
+    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    summary="Create or replace the strategy profile for a held symbol",
+)
+def save_position_strategy_profile(
+    symbol: str,
+    request: PortfolioStrategyProfileRequest,
+    account_id: int = Query(..., ge=1),
+) -> PortfolioStrategyProfileItem:
+    try:
+        item = PortfolioService().save_strategy_profile(
+            account_id=account_id,
+            symbol=symbol,
+            **request.model_dump(),
+        )
+        if item is None:
+            raise api_error(404, "not_found", f"Account not found: {account_id}")
+        return PortfolioStrategyProfileItem(**item)
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise _bad_request(exc)
+    except Exception as exc:
+        raise _internal_error("Save portfolio strategy profile failed", exc)
 
 
 def _resolve_position_analysis_context(

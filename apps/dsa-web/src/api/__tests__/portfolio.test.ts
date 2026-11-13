@@ -1,15 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { portfolioApi } from '../portfolio';
 
-const get = vi.hoisted(() => vi.fn());
+const { get, put } = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn() }));
 
 vi.mock('../index', () => ({
-  default: { get },
+  default: { get, put },
 }));
 
 describe('portfolioApi.getPositionDiagnosis', () => {
   beforeEach(() => {
     get.mockReset();
+    put.mockReset();
   });
 
   it('serializes the position scope and converts nested diagnosis fields', async () => {
@@ -21,6 +22,7 @@ describe('portfolioApi.getPositionDiagnosis', () => {
         status: 'attention',
         valid_date: '2026-01-03',
         generation_mode: 'deterministic_rules',
+        strategy_profile: {},
         facts: { avg_cost: 100, price_provider: 'akshare' },
         calculations: { position_weight_pct: 42 },
         thresholds: { concentration_alert_pct: 35 },

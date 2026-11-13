@@ -13,6 +13,7 @@ const {
   listReviewVerifications,
   createReview,
   verifyReview,
+  saveStrategyProfile,
   getPositionDiagnosis,
 } = vi.hoisted(() => ({
   getSnapshot: vi.fn(),
@@ -22,6 +23,7 @@ const {
   listReviewVerifications: vi.fn(),
   createReview: vi.fn(),
   verifyReview: vi.fn(),
+  saveStrategyProfile: vi.fn(),
   getPositionDiagnosis: vi.fn(),
 }));
 
@@ -34,6 +36,7 @@ vi.mock('../../api/portfolio', () => ({
     listReviewVerifications,
     createReview,
     verifyReview,
+    saveStrategyProfile,
     getPositionDiagnosis,
   },
 }));
@@ -142,6 +145,7 @@ beforeEach(() => {
     status: 'attention',
     validDate: '2026-11-13',
     generationMode: 'deterministic_rules',
+    strategyProfile: {},
     facts: {
       quantity: 100,
       avgCost: 1580,
@@ -166,6 +170,7 @@ beforeEach(() => {
     watchItems: [{ code: 'review_position_concentration', message: '复核该持仓的仓位和原交易计划。', source: 'portfolio_rule.concentration' }],
     missingData: ['buy_thesis', 'risk_budget'],
   });
+  saveStrategyProfile.mockResolvedValue({ id: 4, accountId: 1, symbol: '600519' });
 });
 
 describe('PortfolioDashboardPage', () => {
@@ -225,14 +230,35 @@ describe('PortfolioDashboardPage', () => {
     expect(screen.getByText('确定性规则')).toBeInTheDocument();
     expect(screen.getByText('该持仓触发账户单一持仓集中度阈值。')).toBeInTheDocument();
     expect(screen.getAllByText('portfolio_rule.concentration')).toHaveLength(3);
-    expect(screen.getByText('买入逻辑')).toBeInTheDocument();
+    expect(screen.getAllByText('买入逻辑')).toHaveLength(2);
     expect(screen.getByText('风险预算')).toBeInTheDocument();
+    expect(screen.getByText('风险预算（%）')).toBeInTheDocument();
     expect(getPositionDiagnosis).toHaveBeenCalledWith('600519', {
       accountId: 1,
       asOf: '2026-11-13',
       costMethod: 'fifo',
       includeRealtime: false,
     });
+  });
+
+  it('saves a user-authored strategy profile and refreshes the diagnosis', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: '投资总览' });
+    fireEvent.click(screen.getByRole('button', { name: /查看诊断/ }));
+    await screen.findByTestId('portfolio-position-diagnosis');
+
+    fireEvent.change(screen.getByLabelText('买入逻辑'), { target: { value: '现金流改善' } });
+    fireEvent.change(screen.getByLabelText('目标持有周期'), { target: { value: '6个月' } });
+    fireEvent.change(screen.getByLabelText('仓位上限（%）'), { target: { value: '35' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存策略档案' }));
+
+    await waitFor(() => expect(saveStrategyProfile).toHaveBeenCalledWith(1, '600519', expect.objectContaining({
+      buyThesis: '现金流改善',
+      targetHoldingPeriod: '6个月',
+      positionLimitPct: 35,
+    })));
+    expect(await screen.findByText('策略档案已保存，诊断已重新计算。')).toBeInTheDocument();
+    expect(getPositionDiagnosis).toHaveBeenCalledTimes(2);
   });
 
   it('loads and verifies the latest immutable review', async () => {

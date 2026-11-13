@@ -25,6 +25,7 @@ from src.storage import (
     PortfolioPositionLot,
     PortfolioReview,
     PortfolioReviewVerification,
+    PortfolioStrategyProfile,
     PortfolioTrade,
     StockDaily,
 )
@@ -131,6 +132,47 @@ class PortfolioRepository:
             row.updated_at = datetime.now()
             session.commit()
             return True
+
+    def get_strategy_profile(self, *, account_id: int, symbol: str) -> Optional[PortfolioStrategyProfile]:
+        with self.db.get_session() as session:
+            row = session.execute(
+                select(PortfolioStrategyProfile).where(
+                    and_(
+                        PortfolioStrategyProfile.account_id == account_id,
+                        PortfolioStrategyProfile.symbol == symbol,
+                    )
+                ).limit(1)
+            ).scalar_one_or_none()
+            if row is not None:
+                session.expunge(row)
+            return row
+
+    def upsert_strategy_profile(
+        self,
+        *,
+        account_id: int,
+        symbol: str,
+        fields: Dict[str, Any],
+    ) -> PortfolioStrategyProfile:
+        with self.portfolio_write_session() as session:
+            row = session.execute(
+                select(PortfolioStrategyProfile).where(
+                    and_(
+                        PortfolioStrategyProfile.account_id == account_id,
+                        PortfolioStrategyProfile.symbol == symbol,
+                    )
+                ).limit(1)
+            ).scalar_one_or_none()
+            if row is None:
+                row = PortfolioStrategyProfile(account_id=account_id, symbol=symbol, **fields)
+                session.add(row)
+            else:
+                for key, value in fields.items():
+                    setattr(row, key, value)
+                row.updated_at = datetime.now()
+            session.flush()
+            session.expunge(row)
+            return row
 
     def add_review(
         self,

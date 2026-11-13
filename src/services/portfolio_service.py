@@ -180,6 +180,73 @@ class PortfolioService:
     def deactivate_account(self, account_id: int) -> bool:
         return self.repo.deactivate_account(account_id)
 
+    def get_strategy_profile(self, *, account_id: int, symbol: str) -> Optional[Dict[str, Any]]:
+        account = self.repo.get_account(account_id)
+        if account is None:
+            return None
+        symbol_norm = self._normalize_symbol_for_position(symbol)
+        if not symbol_norm:
+            raise ValueError("symbol must not be empty")
+        row = self.repo.get_strategy_profile(account_id=account_id, symbol=symbol_norm)
+        return self._strategy_profile_to_dict(row) if row is not None else None
+
+    def save_strategy_profile(
+        self,
+        *,
+        account_id: int,
+        symbol: str,
+        buy_thesis: Optional[str],
+        target_holding_period: Optional[str],
+        invalidation_condition: Optional[str],
+        risk_budget_pct: Optional[float],
+        position_limit_pct: Optional[float],
+        add_conditions: Optional[str],
+        reduce_conditions: Optional[str],
+    ) -> Optional[Dict[str, Any]]:
+        if self.repo.get_account(account_id) is None:
+            return None
+        symbol_norm = self._normalize_symbol_for_position(symbol)
+        if not symbol_norm:
+            raise ValueError("symbol must not be empty")
+        for field_name, value in (
+            ("risk_budget_pct", risk_budget_pct),
+            ("position_limit_pct", position_limit_pct),
+        ):
+            if value is not None and not 0 <= float(value) <= 100:
+                raise ValueError(f"{field_name} must be between 0 and 100")
+        clean_text = lambda value: (value or "").strip() or None
+        row = self.repo.upsert_strategy_profile(
+            account_id=account_id,
+            symbol=symbol_norm,
+            fields={
+                "buy_thesis": clean_text(buy_thesis),
+                "target_holding_period": clean_text(target_holding_period),
+                "invalidation_condition": clean_text(invalidation_condition),
+                "risk_budget_pct": float(risk_budget_pct) if risk_budget_pct is not None else None,
+                "position_limit_pct": float(position_limit_pct) if position_limit_pct is not None else None,
+                "add_conditions": clean_text(add_conditions),
+                "reduce_conditions": clean_text(reduce_conditions),
+            },
+        )
+        return self._strategy_profile_to_dict(row)
+
+    @staticmethod
+    def _strategy_profile_to_dict(row: Any) -> Dict[str, Any]:
+        return {
+            "id": int(row.id),
+            "account_id": int(row.account_id),
+            "symbol": str(row.symbol),
+            "buy_thesis": row.buy_thesis,
+            "target_holding_period": row.target_holding_period,
+            "invalidation_condition": row.invalidation_condition,
+            "risk_budget_pct": row.risk_budget_pct,
+            "position_limit_pct": row.position_limit_pct,
+            "add_conditions": row.add_conditions,
+            "reduce_conditions": row.reduce_conditions,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        }
+
     # ------------------------------------------------------------------
     # Event writes
     # ------------------------------------------------------------------

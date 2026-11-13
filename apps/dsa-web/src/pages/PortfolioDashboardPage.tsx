@@ -34,6 +34,26 @@ type DashboardPosition = PortfolioPositionItem & {
   accountName: string;
 };
 
+type StrategyProfileForm = {
+  buyThesis: string;
+  targetHoldingPeriod: string;
+  invalidationCondition: string;
+  riskBudgetPct: string;
+  positionLimitPct: string;
+  addConditions: string;
+  reduceConditions: string;
+};
+
+const EMPTY_STRATEGY_PROFILE: StrategyProfileForm = {
+  buyThesis: '',
+  targetHoldingPeriod: '',
+  invalidationCondition: '',
+  riskBudgetPct: '',
+  positionLimitPct: '',
+  addConditions: '',
+  reduceConditions: '',
+};
+
 type DashboardTexts = {
   title: string;
   description: string;
@@ -109,6 +129,17 @@ type DashboardTexts = {
   averageCost: string;
   positionWeight: string;
   priceSource: string;
+  strategyProfile: string;
+  saveProfile: string;
+  savingProfile: string;
+  savedProfile: string;
+  buyThesis: string;
+  holdingPeriod: string;
+  invalidationCondition: string;
+  riskBudgetPct: string;
+  positionLimitPct: string;
+  addConditions: string;
+  reduceConditions: string;
 };
 
 const DASHBOARD_TEXT: Record<'zh' | 'en', DashboardTexts> = {
@@ -187,6 +218,17 @@ const DASHBOARD_TEXT: Record<'zh' | 'en', DashboardTexts> = {
     averageCost: '平均成本',
     positionWeight: '账户持仓权重',
     priceSource: '价格来源',
+    strategyProfile: '个人交易策略档案',
+    saveProfile: '保存策略档案',
+    savingProfile: '保存中',
+    savedProfile: '策略档案已保存，诊断已重新计算。',
+    buyThesis: '买入逻辑',
+    holdingPeriod: '目标持有周期',
+    invalidationCondition: '计划失效条件',
+    riskBudgetPct: '风险预算（%）',
+    positionLimitPct: '仓位上限（%）',
+    addConditions: '加仓观察条件',
+    reduceConditions: '减仓观察条件',
   },
   en: {
     title: 'Investment overview',
@@ -263,6 +305,17 @@ const DASHBOARD_TEXT: Record<'zh' | 'en', DashboardTexts> = {
     averageCost: 'Average cost',
     positionWeight: 'Account position weight',
     priceSource: 'Price source',
+    strategyProfile: 'Personal strategy profile',
+    saveProfile: 'Save strategy profile',
+    savingProfile: 'Saving',
+    savedProfile: 'Strategy profile saved and diagnosis recalculated.',
+    buyThesis: 'Buy thesis',
+    holdingPeriod: 'Target holding period',
+    invalidationCondition: 'Invalidation condition',
+    riskBudgetPct: 'Risk budget (%)',
+    positionLimitPct: 'Position limit (%)',
+    addConditions: 'Add conditions',
+    reduceConditions: 'Reduce conditions',
   },
 };
 
@@ -316,6 +369,20 @@ function readText(record: Record<string, unknown>, key: string): string {
   return typeof value === 'string' && value.trim() ? value : '--';
 }
 
+function strategyProfileForm(record: Record<string, unknown> = {}): StrategyProfileForm {
+  const textValue = (key: string) => typeof record[key] === 'string' ? String(record[key]) : '';
+  const numberValue = (key: string) => typeof record[key] === 'number' ? String(record[key]) : '';
+  return {
+    buyThesis: textValue('buyThesis'),
+    targetHoldingPeriod: textValue('targetHoldingPeriod'),
+    invalidationCondition: textValue('invalidationCondition'),
+    riskBudgetPct: numberValue('riskBudgetPct'),
+    positionLimitPct: numberValue('positionLimitPct'),
+    addConditions: textValue('addConditions'),
+    reduceConditions: textValue('reduceConditions'),
+  };
+}
+
 function diagnosisStatusView(
   status: PortfolioPositionDiagnosisResponse['status'],
   text: DashboardTexts,
@@ -359,6 +426,9 @@ const PortfolioDashboardPage: React.FC = () => {
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<ParsedApiError | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  const [profileForm, setProfileForm] = useState<StrategyProfileForm>(EMPTY_STRATEGY_PROFILE);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileMessage, setProfileMessage] = useState<string | null>(null);
   const [selectedPosition, setSelectedPosition] = useState<DashboardPosition | null>(null);
   const [diagnosis, setDiagnosis] = useState<PortfolioPositionDiagnosisResponse | null>(null);
   const [diagnosisLoading, setDiagnosisLoading] = useState(false);
@@ -472,6 +542,8 @@ const PortfolioDashboardPage: React.FC = () => {
     setSelectedPosition(row);
     setDiagnosis(null);
     setDiagnosisError(null);
+    setProfileForm(EMPTY_STRATEGY_PROFILE);
+    setProfileMessage(null);
     setDiagnosisLoading(true);
     try {
       const result = await portfolioApi.getPositionDiagnosis(row.symbol, {
@@ -481,10 +553,42 @@ const PortfolioDashboardPage: React.FC = () => {
         includeRealtime: false,
       });
       setDiagnosis(result);
+      setProfileForm(strategyProfileForm(result.strategyProfile));
     } catch (caught) {
       setDiagnosisError(getParsedApiError(caught));
     } finally {
       setDiagnosisLoading(false);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    if (!selectedPosition) return;
+    setProfileSaving(true);
+    setProfileMessage(null);
+    setDiagnosisError(null);
+    try {
+      await portfolioApi.saveStrategyProfile(selectedPosition.accountId, selectedPosition.symbol, {
+        buyThesis: profileForm.buyThesis.trim() || null,
+        targetHoldingPeriod: profileForm.targetHoldingPeriod.trim() || null,
+        invalidationCondition: profileForm.invalidationCondition.trim() || null,
+        riskBudgetPct: profileForm.riskBudgetPct === '' ? null : Number(profileForm.riskBudgetPct),
+        positionLimitPct: profileForm.positionLimitPct === '' ? null : Number(profileForm.positionLimitPct),
+        addConditions: profileForm.addConditions.trim() || null,
+        reduceConditions: profileForm.reduceConditions.trim() || null,
+      });
+      const refreshed = await portfolioApi.getPositionDiagnosis(selectedPosition.symbol, {
+        accountId: selectedPosition.accountId,
+        asOf: snapshot?.asOf,
+        costMethod: snapshot?.costMethod ?? 'fifo',
+        includeRealtime: false,
+      });
+      setDiagnosis(refreshed);
+      setProfileForm(strategyProfileForm(refreshed.strategyProfile));
+      setProfileMessage(text.savedProfile);
+    } catch (caught) {
+      setDiagnosisError(getParsedApiError(caught));
+    } finally {
+      setProfileSaving(false);
     }
   };
 
@@ -750,6 +854,56 @@ const PortfolioDashboardPage: React.FC = () => {
                 <Badge variant="info">{text.deterministicRules}</Badge>
                 <span className="text-xs text-secondary-text">{text.validDate}: {diagnosis.validDate}</span>
               </div>
+
+              <form
+                className="rounded-2xl border border-cyan/20 bg-cyan/5 p-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleSaveProfile();
+                }}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-foreground">{text.strategyProfile}</h3>
+                  <Button type="submit" size="sm" isLoading={profileSaving} loadingText={text.savingProfile}>{text.saveProfile}</Button>
+                </div>
+                {profileMessage ? <p className="mt-3 text-sm text-success">{profileMessage}</p> : null}
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {[
+                    ['buyThesis', text.buyThesis],
+                    ['targetHoldingPeriod', text.holdingPeriod],
+                    ['invalidationCondition', text.invalidationCondition],
+                    ['addConditions', text.addConditions],
+                    ['reduceConditions', text.reduceConditions],
+                  ].map(([key, label]) => (
+                    <label key={key} className={key === 'buyThesis' ? 'sm:col-span-2' : ''}>
+                      <span className="text-xs text-secondary-text">{label}</span>
+                      <textarea
+                        value={profileForm[key as keyof StrategyProfileForm]}
+                        onChange={(event) => setProfileForm((current) => ({ ...current, [key]: event.target.value }))}
+                        rows={key === 'buyThesis' ? 3 : 2}
+                        className="mt-1 w-full rounded-xl border border-border/70 bg-card/80 px-3 py-2 text-sm text-foreground outline-none focus:border-cyan/50"
+                      />
+                    </label>
+                  ))}
+                  {[
+                    ['riskBudgetPct', text.riskBudgetPct],
+                    ['positionLimitPct', text.positionLimitPct],
+                  ].map(([key, label]) => (
+                    <label key={key}>
+                      <span className="text-xs text-secondary-text">{label}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value={profileForm[key as keyof StrategyProfileForm]}
+                        onChange={(event) => setProfileForm((current) => ({ ...current, [key]: event.target.value }))}
+                        className="mt-1 h-10 w-full rounded-xl border border-border/70 bg-card/80 px-3 text-sm text-foreground outline-none focus:border-cyan/50"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </form>
 
               <section className="rounded-2xl border border-border/60 bg-surface/40 p-4">
                 <h3 className="text-sm font-semibold text-foreground">{text.factsAndCalculations}</h3>

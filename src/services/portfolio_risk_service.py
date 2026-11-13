@@ -154,8 +154,15 @@ class PortfolioRiskService:
         if position is None:
             return None
 
+        profile = self.portfolio_service.get_strategy_profile(
+            account_id=account_id,
+            symbol=target,
+        ) or {}
+
         concentration_threshold = float(
-            getattr(self.config, "portfolio_risk_concentration_alert_pct", 35.0)
+            profile.get("position_limit_pct")
+            if profile.get("position_limit_pct") is not None
+            else getattr(self.config, "portfolio_risk_concentration_alert_pct", 35.0)
         )
         stop_loss_threshold = float(
             getattr(self.config, "portfolio_risk_stop_loss_alert_pct", 10.0)
@@ -215,6 +222,12 @@ class PortfolioRiskService:
                 "code": "within_concentration_limit",
                 "message": "该持仓未触发账户单一持仓集中度阈值。",
                 "source": "portfolio_rule.concentration",
+            })
+        if profile:
+            supporting_evidence.append({
+                "code": "strategy_profile_configured",
+                "message": "该持仓已配置个人交易计划，可用于纪律检查。",
+                "source": "portfolio_strategy_profile",
             })
 
         if not price_available:
@@ -314,14 +327,19 @@ class PortfolioRiskService:
         else:
             status = "stable"
 
-        missing_data = [
-            "buy_thesis",
-            "target_holding_period",
-            "invalidation_condition",
-            "risk_budget",
-            "position_limit",
-            "add_reduce_conditions",
-        ]
+        missing_data = []
+        if not profile.get("buy_thesis"):
+            missing_data.append("buy_thesis")
+        if not profile.get("target_holding_period"):
+            missing_data.append("target_holding_period")
+        if not profile.get("invalidation_condition"):
+            missing_data.append("invalidation_condition")
+        if profile.get("risk_budget_pct") is None:
+            missing_data.append("risk_budget")
+        if profile.get("position_limit_pct") is None:
+            missing_data.append("position_limit")
+        if not profile.get("add_conditions") and not profile.get("reduce_conditions"):
+            missing_data.append("add_reduce_conditions")
         if not price_available:
             missing_data.append("current_price")
 
@@ -332,6 +350,7 @@ class PortfolioRiskService:
             "status": status,
             "valid_date": as_of_date.isoformat(),
             "generation_mode": "deterministic_rules",
+            "strategy_profile": profile,
             "facts": {
                 "market": position.get("market"),
                 "currency": position.get("currency"),

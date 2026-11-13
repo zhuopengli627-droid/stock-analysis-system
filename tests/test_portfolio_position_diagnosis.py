@@ -10,8 +10,9 @@ from src.services.portfolio_risk_service import PortfolioRiskService
 
 
 class _PortfolioServiceStub:
-    def __init__(self, snapshot):
+    def __init__(self, snapshot, profile=None):
         self.snapshot = snapshot
+        self.profile = profile or {}
 
     @staticmethod
     def _normalize_symbol_for_position(symbol: str) -> str:
@@ -19,6 +20,9 @@ class _PortfolioServiceStub:
 
     def get_portfolio_snapshot(self, **_kwargs):
         return self.snapshot
+
+    def get_strategy_profile(self, **_kwargs):
+        return dict(self.profile)
 
 
 def _snapshot(*, pnl_pct=-5.0, price_available=True, price_stale=False, market_value=60.0):
@@ -53,7 +57,7 @@ def _snapshot(*, pnl_pct=-5.0, price_available=True, price_stale=False, market_v
 
 
 class PortfolioPositionDiagnosisTestCase(unittest.TestCase):
-    def _service(self, snapshot):
+    def _service(self, snapshot, profile=None):
         config = SimpleNamespace(
             portfolio_risk_concentration_alert_pct=35.0,
             portfolio_risk_stop_loss_alert_pct=10.0,
@@ -61,7 +65,7 @@ class PortfolioPositionDiagnosisTestCase(unittest.TestCase):
         )
         return PortfolioRiskService(
             repo=SimpleNamespace(),
-            portfolio_service=_PortfolioServiceStub(snapshot),
+            portfolio_service=_PortfolioServiceStub(snapshot, profile),
             decision_signal_service=SimpleNamespace(),
             config=config,
         )
@@ -111,6 +115,29 @@ class PortfolioPositionDiagnosisTestCase(unittest.TestCase):
 
         self.assertIsNone(service.get_position_diagnosis(account_id=8, symbol="600519"))
         self.assertIsNone(service.get_position_diagnosis(account_id=7, symbol="000001"))
+
+    def test_strategy_profile_replaces_default_position_limit(self):
+        profile = {
+            "buy_thesis": "长期需求改善",
+            "target_holding_period": "6-12 months",
+            "invalidation_condition": "核心收入下降",
+            "risk_budget_pct": 3.0,
+            "position_limit_pct": 70.0,
+            "add_conditions": "估值回落",
+            "reduce_conditions": "逻辑失效",
+        }
+        diagnosis = self._service(_snapshot(pnl_pct=5.0), profile).get_position_diagnosis(
+            account_id=7,
+            symbol="600519",
+            as_of=date(2026, 1, 3),
+        )
+
+        self.assertIsNotNone(diagnosis)
+        assert diagnosis is not None
+        self.assertEqual(diagnosis["status"], "stable")
+        self.assertEqual(diagnosis["missing_data"], [])
+        self.assertEqual(diagnosis["thresholds"]["concentration_alert_pct"], 70.0)
+        self.assertEqual(diagnosis["strategy_profile"]["buy_thesis"], "长期需求改善")
 
 
 if __name__ == "__main__":

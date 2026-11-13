@@ -645,6 +645,29 @@ class PortfolioPosition(Base):
     )
 
 
+class PortfolioStrategyProfile(Base):
+    """User-authored plan and deterministic limits for one held symbol."""
+
+    __tablename__ = 'portfolio_strategy_profiles'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey('portfolio_accounts.id'), nullable=False, index=True)
+    symbol = Column(String(16), nullable=False, index=True)
+    buy_thesis = Column(Text)
+    target_holding_period = Column(String(64))
+    invalidation_condition = Column(Text)
+    risk_budget_pct = Column(Float)
+    position_limit_pct = Column(Float)
+    add_conditions = Column(Text)
+    reduce_conditions = Column(Text)
+    created_at = Column(DateTime, default=datetime.now, index=True)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, index=True)
+
+    __table_args__ = (
+        UniqueConstraint('account_id', 'symbol', name='uix_portfolio_strategy_profile_account_symbol'),
+    )
+
+
 class PortfolioPositionLot(Base):
     """Lot-level remaining quantities used by FIFO replay."""
 

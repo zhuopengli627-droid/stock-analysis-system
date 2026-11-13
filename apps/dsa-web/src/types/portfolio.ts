@@ -69,6 +69,7 @@ export interface PortfolioPositionDiagnosisResponse {
   status: 'stable' | 'attention' | 'risk_triggered' | 'data_incomplete';
   validDate: string;
   generationMode: 'deterministic_rules';
+  strategyProfile: Record<string, unknown>;
   facts: Record<string, unknown>;
   calculations: Record<string, unknown>;
   thresholds: Record<string, number>;
@@ -77,6 +78,24 @@ export interface PortfolioPositionDiagnosisResponse {
   riskTriggers: PortfolioDiagnosisEvidenceItem[];
   watchItems: PortfolioDiagnosisEvidenceItem[];
   missingData: string[];
+}
+
+export interface PortfolioStrategyProfilePayload {
+  buyThesis?: string | null;
+  targetHoldingPeriod?: string | null;
+  invalidationCondition?: string | null;
+  riskBudgetPct?: number | null;
+  positionLimitPct?: number | null;
+  addConditions?: string | null;
+  reduceConditions?: string | null;
+}
+
+export interface PortfolioStrategyProfileItem extends PortfolioStrategyProfilePayload {
+  id: number;
+  accountId: number;
+  symbol: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface PortfolioAccountSnapshot {

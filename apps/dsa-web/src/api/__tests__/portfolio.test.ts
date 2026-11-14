@@ -80,7 +80,29 @@ describe('portfolioApi.getPositionDiagnosis', () => {
           chased_count: 0,
           sample_sufficient: false,
           sample_warning: 'sample warning',
-          unavailable_metrics: ['win_rate'],
+          unavailable_metrics: ['max_drawdown'],
+          performance: {
+            available: true,
+            data_quality: 'ok',
+            methodology: 'fifo_sell_execution',
+            currency: 'CNY',
+            realized_trade_count: 2,
+            evaluated_trade_count: 2,
+            win_count: 1,
+            loss_count: 1,
+            breakeven_count: 0,
+            win_rate_pct: 50,
+            average_win: 90,
+            average_loss: -110,
+            profit_loss_ratio: 0.818182,
+            total_realized_pnl: -20,
+            matched_journal_count: 2,
+            ambiguous_journal_count: 0,
+            unmatched_journal_count: 0,
+            non_realized_journal_count: 0,
+            planned: { sample_count: 1, win_rate_pct: 100, total_realized_pnl: 90 },
+            unplanned: { sample_count: 1, win_rate_pct: 0, total_realized_pnl: -110 },
+          },
         },
       },
     });
@@ -106,5 +128,6 @@ describe('portfolioApi.getPositionDiagnosis', () => {
     });
     expect(listed.summary.plannedCount).toBe(1);
     expect(listed.summary.sampleSufficient).toBe(false);
+    expect(listed.summary.performance.winRatePct).toBe(50);
   });
 });

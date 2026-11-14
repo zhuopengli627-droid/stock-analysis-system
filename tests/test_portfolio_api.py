@@ -1105,7 +1105,8 @@ class PortfolioApiTestCase(unittest.TestCase):
         self.assertEqual(payload["summary"]["unplanned_count"], 1)
         self.assertEqual(payload["summary"]["chased_count"], 1)
         self.assertFalse(payload["summary"]["sample_sufficient"])
-        self.assertIn("win_rate", payload["summary"]["unavailable_metrics"])
+        self.assertIn("max_drawdown", payload["summary"]["unavailable_metrics"])
+        self.assertEqual(payload["summary"]["performance"]["realized_trade_count"], 0)
         self.assertEqual(payload["items"][0]["plan_deviation"], "未等待收盘确认")
 
         deleted = self.client.delete(f"/api/v1/portfolio/trade-journal/{planned.json()['id']}")
@@ -1125,6 +1126,122 @@ class PortfolioApiTestCase(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400, response.text)
         self.assertEqual(response.json()["error"], "validation_error")
+
+    def test_trade_journal_performance_uses_fifo_realized_sell_results(self) -> None:
+        account = self.client.post(
+            "/api/v1/portfolio/accounts",
+            json={"name": "Performance", "market": "cn", "base_currency": "CNY"},
+        )
+        self.assertEqual(account.status_code, 200, account.text)
+        account_id = account.json()["id"]
+        common = {
+            "account_id": account_id,
+            "symbol": "600519",
+            "market": "cn",
+            "currency": "CNY",
+            "tax": 0,
+        }
+        for trade in (
+            {"trade_date": "2026-01-02", "side": "buy", "quantity": 100, "price": 10, "fee": 10},
+            {"trade_date": "2026-01-03", "side": "sell", "quantity": 50, "price": 12, "fee": 5},
+            {"trade_date": "2026-01-04", "side": "sell", "quantity": 50, "price": 8, "fee": 5},
+        ):
+            response = self.client.post("/api/v1/portfolio/trades", json={**common, **trade})
+            self.assertEqual(response.status_code, 200, response.text)
+
+        for journal in (
+            {"journal_date": "2026-01-03", "planned_trade": True, "reason": "计划止盈"},
+            {"journal_date": "2026-01-04", "planned_trade": False, "reason": "临时止损"},
+        ):
+            response = self.client.post(
+                "/api/v1/portfolio/trade-journal",
+                json={
+                    "account_id": account_id,
+                    "symbol": "600519",
+                    "side": "sell",
+                    "chased_price": False,
+                    **journal,
+                },
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+        response = self.client.get(
+            "/api/v1/portfolio/trade-journal",
+            params={"account_id": account_id},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        performance = response.json()["summary"]["performance"]
+        self.assertTrue(performance["available"])
+        self.assertEqual(performance["methodology"], "fifo_sell_execution")
+        self.assertEqual(performance["realized_trade_count"], 2)
+        self.assertEqual(performance["win_count"], 1)
+        self.assertEqual(performance["loss_count"], 1)
+        self.assertAlmostEqual(performance["win_rate_pct"], 50.0, places=6)
+        self.assertAlmostEqual(performance["average_win"], 90.0, places=6)
+        self.assertAlmostEqual(performance["average_loss"], -110.0, places=6)
+        self.assertAlmostEqual(performance["profit_loss_ratio"], 90.0 / 110.0, places=6)
+        self.assertAlmostEqual(performance["total_realized_pnl"], -20.0, places=6)
+        self.assertEqual(performance["matched_journal_count"], 2)
+        self.assertAlmostEqual(performance["planned"]["total_realized_pnl"], 90.0, places=6)
+        self.assertAlmostEqual(performance["unplanned"]["total_realized_pnl"], -110.0, places=6)
+
+    def test_trade_journal_excludes_ambiguous_same_day_trade_match(self) -> None:
+        account = self.client.post(
+            "/api/v1/portfolio/accounts",
+            json={"name": "Ambiguous", "market": "cn", "base_currency": "CNY"},
+        )
+        account_id = account.json()["id"]
+        common = {"account_id": account_id, "symbol": "600519", "market": "cn", "currency": "CNY", "fee": 0, "tax": 0}
+        self.assertEqual(self.client.post("/api/v1/portfolio/trades", json={**common, "trade_date": "2026-01-02", "side": "buy", "quantity": 100, "price": 10}).status_code, 200)
+        for price in (11, 12):
+            self.assertEqual(self.client.post("/api/v1/portfolio/trades", json={**common, "trade_date": "2026-01-03", "side": "sell", "quantity": 25, "price": price}).status_code, 200)
+        journal = self.client.post(
+            "/api/v1/portfolio/trade-journal",
+            json={"account_id": account_id, "symbol": "600519", "journal_date": "2026-01-03", "side": "sell", "reason": "同日分批卖出"},
+        )
+        self.assertEqual(journal.status_code, 200, journal.text)
+
+        performance = self.client.get(
+            "/api/v1/portfolio/trade-journal",
+            params={"account_id": account_id},
+        ).json()["summary"]["performance"]
+        self.assertEqual(performance["realized_trade_count"], 2)
+        self.assertEqual(performance["matched_journal_count"], 0)
+        self.assertEqual(performance["ambiguous_journal_count"], 1)
+
+    def test_trade_journal_performance_adjusts_fifo_cost_for_split(self) -> None:
+        account = self.client.post(
+            "/api/v1/portfolio/accounts",
+            json={"name": "Split performance", "market": "cn", "base_currency": "CNY"},
+        )
+        account_id = account.json()["id"]
+        common = {"account_id": account_id, "symbol": "600519", "market": "cn", "currency": "CNY", "fee": 0, "tax": 0}
+        self.assertEqual(self.client.post("/api/v1/portfolio/trades", json={**common, "trade_date": "2026-01-02", "side": "buy", "quantity": 100, "price": 10}).status_code, 200)
+        split = self.client.post(
+            "/api/v1/portfolio/corporate-actions",
+            json={
+                "account_id": account_id,
+                "symbol": "600519",
+                "effective_date": "2026-01-03",
+                "action_type": "split_adjustment",
+                "market": "cn",
+                "currency": "CNY",
+                "split_ratio": 2,
+            },
+        )
+        self.assertEqual(split.status_code, 200, split.text)
+        sold = self.client.post(
+            "/api/v1/portfolio/trades",
+            json={**common, "trade_date": "2026-01-04", "side": "sell", "quantity": 200, "price": 6},
+        )
+        self.assertEqual(sold.status_code, 200, sold.text)
+
+        performance = self.client.get(
+            "/api/v1/portfolio/trade-journal",
+            params={"account_id": account_id},
+        ).json()["summary"]["performance"]
+        self.assertEqual(performance["realized_trade_count"], 1)
+        self.assertAlmostEqual(performance["total_realized_pnl"], 200.0, places=6)
 
 
 if __name__ == "__main__":

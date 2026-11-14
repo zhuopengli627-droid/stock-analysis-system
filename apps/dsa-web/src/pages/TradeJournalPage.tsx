@@ -7,6 +7,7 @@ import { useUiLanguage } from '../contexts/UiLanguageContext';
 import type {
   PortfolioAccountItem,
   PortfolioTradeJournalItem,
+  PortfolioTradeJournalPerformanceGroup,
   PortfolioTradeJournalSummary,
 } from '../types/portfolio';
 
@@ -37,6 +38,21 @@ const emptyForm = (): JournalForm => ({
 });
 
 const fieldClass = 'mt-1 w-full rounded-xl border border-border bg-base px-3 py-2 text-sm text-foreground outline-none transition focus:border-cyan/50 focus:ring-2 focus:ring-cyan/10';
+
+const formatPct = (value?: number | null) => value == null ? '—' : `${value.toFixed(1)}%`;
+
+const formatMoney = (value: number | null | undefined, currency: string | null | undefined, zh: boolean) => {
+  if (value == null || !currency) return '—';
+  try {
+    return new Intl.NumberFormat(zh ? 'zh-CN' : 'en-US', {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return `${currency} ${value.toFixed(2)}`;
+  }
+};
 
 const TradeJournalPage: React.FC = () => {
   const { language } = useUiLanguage();
@@ -78,8 +94,22 @@ const TradeJournalPage: React.FC = () => {
     empty: zh ? '暂无交易日志' : 'No journal entries yet',
     emptyDescription: zh ? '先记录一笔交易决策，系统才会开始统计纪律表现。' : 'Record a trade decision to start discipline tracking.',
     sampleTitle: zh ? '样本量提示' : 'Sample-size notice',
-    sampleMessage: zh ? '当前样本少于 20 条，统计仅用于描述行为，不能解释为稳定交易规律。' : 'Fewer than 20 samples are descriptive only and do not establish a stable trading pattern.',
-    unavailable: zh ? '胜率、盈亏比和最大回撤需完整平仓配对与收益数据，本阶段不生成推测值。' : 'Win rate, profit/loss ratio, and drawdown require paired closed trades and are not inferred here.',
+    sampleMessage: zh ? '已实现卖出样本少于 20 笔，统计仅用于描述行为，不能解释为稳定交易规律。' : 'Fewer than 20 realized sell samples are descriptive only and do not establish a stable trading pattern.',
+    methodology: zh ? '绩效按每笔卖出成交计算：FIFO 买入成本包含买入费用，卖出收入扣除费用和税费；最大回撤仍使用账户净值快照。' : 'Performance is calculated per sell execution using FIFO cost including buy fees and net sell proceeds. Drawdown remains based on account equity snapshots.',
+    performanceTitle: zh ? '已实现交易绩效' : 'Realized trade performance',
+    performanceDescription: zh ? '仅使用真实成交，不使用日志中的主观描述推测收益。' : 'Uses executed trades only; journal notes never infer returns.',
+    realizedSells: zh ? '已实现卖出' : 'Realized sells',
+    winRate: zh ? '胜率' : 'Win rate',
+    averageWin: zh ? '平均盈利' : 'Average win',
+    averageLoss: zh ? '平均亏损' : 'Average loss',
+    profitLossRatio: zh ? '盈亏比' : 'Profit/loss ratio',
+    totalRealized: zh ? '已实现收益' : 'Realized P&L',
+    disciplineCompare: zh ? '计划内与计划外表现' : 'Planned vs unplanned',
+    samples: zh ? '有效样本' : 'Samples',
+    matchingNote: zh ? '日志只在账户、股票、日期和方向均唯一匹配成交时进入纪律绩效。' : 'A journal enters discipline performance only when account, symbol, date, and side match one unique execution.',
+    unmatched: zh ? '未匹配' : 'Unmatched',
+    ambiguous: zh ? '匹配歧义' : 'Ambiguous',
+    buyOnly: zh ? '尚未形成卖出结果' : 'No sell result yet',
     delete: zh ? '删除日志' : 'Delete entry',
   }), [zh]);
 
@@ -169,6 +199,8 @@ const TradeJournalPage: React.FC = () => {
     }
   };
 
+  const performance = summary?.performance ?? null;
+
   return (
     <div className="mx-auto w-full max-w-[1500px] space-y-5 pb-8">
       <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -182,7 +214,7 @@ const TradeJournalPage: React.FC = () => {
 
       {error ? <InlineAlert variant="danger" title={zh ? '操作失败' : 'Operation failed'} message={error} /> : null}
       {summary && !summary.sampleSufficient ? <InlineAlert variant="warning" title={copy.sampleTitle} message={copy.sampleMessage} /> : null}
-      <InlineAlert variant="info" message={copy.unavailable} />
+      <InlineAlert variant="info" message={copy.methodology} />
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
@@ -194,6 +226,43 @@ const TradeJournalPage: React.FC = () => {
           <Card key={String(label)} padding="sm"><div className="flex items-center justify-between"><div><p className="text-xs text-secondary-text">{String(label)}</p><p className="mt-2 text-2xl font-semibold text-foreground">{String(value)}</p></div><Icon className="h-5 w-5 text-cyan" /></div></Card>
         ))}
       </section>
+
+      <Card title={copy.performanceTitle} subtitle={copy.performanceDescription}>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          {[
+            [copy.realizedSells, performance?.realizedTradeCount ?? 0],
+            [copy.winRate, formatPct(performance?.winRatePct)],
+            [copy.averageWin, formatMoney(performance?.averageWin, performance?.currency, zh)],
+            [copy.averageLoss, formatMoney(performance?.averageLoss, performance?.currency, zh)],
+            [copy.profitLossRatio, performance?.profitLossRatio == null ? '—' : performance.profitLossRatio.toFixed(2)],
+            [copy.totalRealized, formatMoney(performance?.totalRealizedPnl, performance?.currency, zh)],
+          ].map(([label, value]) => (
+            <div key={String(label)} className="rounded-2xl border border-border/70 bg-base/40 p-4">
+              <p className="text-xs text-secondary-text">{String(label)}</p>
+              <p className="mt-2 text-xl font-semibold text-foreground">{String(value)}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {[
+            [copy.planned, performance?.planned],
+            [copy.unplanned, performance?.unplanned],
+          ].map(([label, group]) => {
+            const result = group as PortfolioTradeJournalPerformanceGroup | undefined;
+            return (
+              <div key={String(label)} className="rounded-2xl border border-border/70 p-4">
+                <p className="font-medium text-foreground">{String(label)}</p>
+                <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
+                  <div><p className="text-xs text-secondary-text">{copy.samples}</p><p className="mt-1 text-foreground">{result?.sampleCount ?? 0}</p></div>
+                  <div><p className="text-xs text-secondary-text">{copy.winRate}</p><p className="mt-1 text-foreground">{formatPct(result?.winRatePct)}</p></div>
+                  <div><p className="text-xs text-secondary-text">{copy.totalRealized}</p><p className="mt-1 text-foreground">{formatMoney(result?.totalRealizedPnl, performance?.currency, zh)}</p></div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <p className="mt-4 text-xs text-secondary-text">{copy.matchingNote} {copy.unmatched} {performance?.unmatchedJournalCount ?? 0} · {copy.ambiguous} {performance?.ambiguousJournalCount ?? 0} · {copy.buyOnly} {performance?.nonRealizedJournalCount ?? 0}</p>
+      </Card>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
         <Card title={copy.newEntry}>

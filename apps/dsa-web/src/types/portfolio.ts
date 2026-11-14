@@ -317,6 +317,37 @@ export interface PortfolioTradeJournalSummary {
   sampleSufficient: boolean;
   sampleWarning?: string | null;
   unavailableMetrics: string[];
+  performance: PortfolioTradeJournalPerformance;
+}
+
+export interface PortfolioTradeJournalPerformanceGroup {
+  sampleCount: number;
+  winRatePct?: number | null;
+  totalRealizedPnl: number;
+}
+
+export interface PortfolioTradeJournalPerformance {
+  available: boolean;
+  dataQuality: string;
+  methodology: 'fifo_sell_execution' | string;
+  currency?: string | null;
+  reason?: string | null;
+  realizedTradeCount: number;
+  evaluatedTradeCount: number;
+  winCount: number;
+  lossCount: number;
+  breakevenCount: number;
+  winRatePct?: number | null;
+  averageWin?: number | null;
+  averageLoss?: number | null;
+  profitLossRatio?: number | null;
+  totalRealizedPnl: number;
+  matchedJournalCount: number;
+  ambiguousJournalCount: number;
+  unmatchedJournalCount: number;
+  nonRealizedJournalCount: number;
+  planned: PortfolioTradeJournalPerformanceGroup;
+  unplanned: PortfolioTradeJournalPerformanceGroup;
 }
 
 export interface PortfolioTradeJournalListResponse {

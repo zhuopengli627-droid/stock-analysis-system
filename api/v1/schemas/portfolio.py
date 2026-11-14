@@ -129,6 +129,36 @@ class PortfolioTradeJournalItem(PortfolioTradeJournalCreateRequest):
     updated_at: Optional[str] = None
 
 
+class PortfolioTradeJournalPerformanceGroup(BaseModel):
+    sample_count: int
+    win_rate_pct: Optional[float] = None
+    total_realized_pnl: float
+
+
+class PortfolioTradeJournalPerformance(BaseModel):
+    available: bool
+    data_quality: str
+    methodology: str
+    currency: Optional[str] = None
+    reason: Optional[str] = None
+    realized_trade_count: int
+    evaluated_trade_count: int
+    win_count: int
+    loss_count: int
+    breakeven_count: int
+    win_rate_pct: Optional[float] = None
+    average_win: Optional[float] = None
+    average_loss: Optional[float] = None
+    profit_loss_ratio: Optional[float] = None
+    total_realized_pnl: float
+    matched_journal_count: int
+    ambiguous_journal_count: int
+    unmatched_journal_count: int
+    non_realized_journal_count: int
+    planned: PortfolioTradeJournalPerformanceGroup
+    unplanned: PortfolioTradeJournalPerformanceGroup
+
+
 class PortfolioTradeJournalSummary(BaseModel):
     total: int
     planned_count: int
@@ -137,6 +167,7 @@ class PortfolioTradeJournalSummary(BaseModel):
     sample_sufficient: bool
     sample_warning: Optional[str] = None
     unavailable_metrics: List[str] = Field(default_factory=list)
+    performance: PortfolioTradeJournalPerformance
 
 
 class PortfolioTradeJournalListResponse(BaseModel):

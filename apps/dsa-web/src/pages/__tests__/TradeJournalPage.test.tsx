@@ -35,7 +35,29 @@ const journalResponse = {
     chasedCount: 0,
     sampleSufficient: false,
     sampleWarning: 'sample warning',
-    unavailableMetrics: ['win_rate', 'profit_loss_ratio', 'max_drawdown'],
+    unavailableMetrics: ['max_drawdown'],
+    performance: {
+      available: true,
+      dataQuality: 'ok',
+      methodology: 'fifo_sell_execution',
+      currency: 'CNY',
+      realizedTradeCount: 2,
+      evaluatedTradeCount: 2,
+      winCount: 1,
+      lossCount: 1,
+      breakevenCount: 0,
+      winRatePct: 50,
+      averageWin: 90,
+      averageLoss: -110,
+      profitLossRatio: 0.818182,
+      totalRealizedPnl: -20,
+      matchedJournalCount: 2,
+      ambiguousJournalCount: 0,
+      unmatchedJournalCount: 0,
+      nonRealizedJournalCount: 0,
+      planned: { sampleCount: 1, winRatePct: 100, totalRealizedPnl: 90 },
+      unplanned: { sampleCount: 1, winRatePct: 0, totalRealizedPnl: -110 },
+    },
   },
 };
 
@@ -53,9 +75,11 @@ describe('TradeJournalPage', () => {
     render(<UiLanguageProvider><TradeJournalPage /></UiLanguageProvider>);
 
     expect(await screen.findByText('回踩计划支撑位')).toBeInTheDocument();
-    expect(screen.getByText(/当前样本少于 20 条/)).toBeInTheDocument();
-    expect(screen.getByText(/胜率、盈亏比和最大回撤/)).toBeInTheDocument();
-    expect(screen.getAllByText('计划内交易')).toHaveLength(2);
+    expect(screen.getByText(/已实现卖出样本少于 20 笔/)).toBeInTheDocument();
+    expect(screen.getByText(/绩效按每笔卖出成交计算/)).toBeInTheDocument();
+    expect(screen.getAllByText('计划内交易')).toHaveLength(3);
+    expect(screen.getByText('50.0%')).toBeInTheDocument();
+    expect(screen.getByText('0.82')).toBeInTheDocument();
   });
 
   it('submits the deterministic discipline fields and reloads the list', async () => {

@@ -293,8 +293,7 @@ class PortfolioService:
         page: int = 1,
         page_size: int = 20,
     ) -> Dict[str, Any]:
-        if account_id is not None:
-            self._require_active_account(account_id)
+        account = self._require_active_account(account_id) if account_id is not None else None
         page, page_size = self._validate_paging(page=page, page_size=page_size)
         rows, summary = self.repo.query_trade_journals(
             account_id=account_id,
@@ -302,6 +301,16 @@ class PortfolioService:
             page_size=page_size,
         )
         total = summary["total"]
+        performance = self._empty_trade_performance(
+            reason="Select one account to calculate realized trade performance."
+        )
+        if account is not None:
+            journals = self.repo.list_trade_journals_for_account(account_id)
+            try:
+                performance = self._build_trade_performance(account=account, journals=journals)
+            except (PortfolioOversellError, ValueError) as exc:
+                performance = self._empty_trade_performance(reason=str(exc), data_quality="invalid_ledger")
+        realized_count = int(performance["realized_trade_count"])
         return {
             "items": [self._trade_journal_row_to_dict(row) for row in rows],
             "total": total,
@@ -309,14 +318,181 @@ class PortfolioService:
             "page_size": page_size,
             "summary": {
                 **summary,
-                "sample_sufficient": total >= 20,
-                "sample_warning": None if total >= 20 else "Sample size below 20; discipline statistics are descriptive only.",
-                "unavailable_metrics": ["win_rate", "profit_loss_ratio", "max_drawdown"],
+                "sample_sufficient": realized_count >= 20,
+                "sample_warning": None if realized_count >= 20 else "Fewer than 20 realized sell executions; performance statistics are descriptive only.",
+                "unavailable_metrics": ["max_drawdown"],
+                "performance": performance,
             },
         }
 
     def delete_trade_journal(self, journal_id: int) -> bool:
         return self.repo.delete_trade_journal(journal_id)
+
+    def _build_trade_performance(self, *, account: Any, journals: List[Any]) -> Dict[str, Any]:
+        as_of = date.today()
+        trades = self.repo.list_trades(int(account.id), as_of=as_of)
+        corporate_actions = self.repo.list_corporate_actions(int(account.id), as_of=as_of)
+        events: List[Tuple[str, date, int, Any]] = []
+        events.extend(("corp", row.effective_date, int(row.id), row) for row in corporate_actions)
+        events.extend(("trade", row.trade_date, int(row.id), row) for row in trades)
+        events.sort(key=lambda item: (item[1], 0 if item[0] == "corp" else 1, item[2]))
+
+        fifo_lots: Dict[Tuple[str, str, str], List[Dict[str, Any]]] = defaultdict(list)
+        outcomes: Dict[int, Dict[str, Any]] = {}
+        for event_type, event_date, _, event in events:
+            key = (
+                self._normalize_symbol_for_position(event.symbol),
+                self._normalize_market(event.market),
+                self._normalize_currency(event.currency),
+            )
+            if event_type == "corp":
+                if (event.action_type or "").strip().lower() == "split_adjustment":
+                    split_ratio = float(event.split_ratio or 0.0)
+                    if split_ratio <= 0:
+                        raise ValueError(f"Invalid split ratio for {event.symbol}")
+                    for lot in fifo_lots[key]:
+                        lot["remaining_quantity"] *= split_ratio
+                        lot["unit_cost"] /= split_ratio
+                continue
+
+            quantity = float(event.quantity or 0.0)
+            price = float(event.price or 0.0)
+            fee = float(event.fee or 0.0)
+            tax = float(event.tax or 0.0)
+            if quantity <= 0 or price <= 0:
+                raise ValueError(f"Invalid trade quantity or price for {event.symbol}")
+            gross = quantity * price
+            side = (event.side or "").strip().lower()
+            if side == "buy":
+                fifo_lots[key].append({
+                    "remaining_quantity": quantity,
+                    "unit_cost": (gross + fee + tax) / quantity,
+                })
+                continue
+            if side != "sell":
+                raise ValueError(f"Unsupported trade side: {event.side}")
+            cost_basis = self._consume_fifo_lots(fifo_lots[key], quantity, key[0], event_date)
+            realized_local = gross - fee - tax - cost_basis
+            realized_base, fx_stale, _ = self._convert_amount(
+                amount=realized_local,
+                from_currency=key[2],
+                to_currency=account.base_currency,
+                as_of_date=event_date,
+            )
+            outcomes[int(event.id)] = {
+                "trade_id": int(event.id),
+                "symbol": key[0],
+                "trade_date": event_date.isoformat(),
+                "currency": account.base_currency,
+                "realized_pnl": round(realized_base, 6),
+                "return_pct": round(realized_local / cost_basis * 100.0, 6) if cost_basis > EPS else None,
+                "fx_stale": bool(fx_stale),
+            }
+
+        outcome_values = list(outcomes.values())
+        positive = [item for item in outcome_values if float(item["realized_pnl"]) > EPS]
+        negative = [item for item in outcome_values if float(item["realized_pnl"]) < -EPS]
+        breakeven = len(outcome_values) - len(positive) - len(negative)
+        evaluated = len(positive) + len(negative)
+        avg_win = sum(float(item["realized_pnl"]) for item in positive) / len(positive) if positive else None
+        avg_loss = sum(float(item["realized_pnl"]) for item in negative) / len(negative) if negative else None
+
+        trade_keys: Dict[Tuple[str, date, str], List[Any]] = defaultdict(list)
+        for trade in trades:
+            trade_keys[(
+                self._normalize_symbol_for_position(trade.symbol),
+                trade.trade_date,
+                (trade.side or "").strip().lower(),
+            )].append(trade)
+        journal_keys: Dict[Tuple[str, date, str], List[Any]] = defaultdict(list)
+        for journal in journals:
+            journal_keys[(
+                self._normalize_symbol_for_position(journal.symbol),
+                journal.journal_date,
+                (journal.side or "").strip().lower(),
+            )].append(journal)
+
+        classified: Dict[str, List[Dict[str, Any]]] = {"planned": [], "unplanned": []}
+        ambiguous_journals = 0
+        unmatched_journals = 0
+        non_realized_journals = 0
+        matched_journals = 0
+        for key, key_journals in journal_keys.items():
+            key_trades = trade_keys.get(key, [])
+            if len(key_journals) != 1 or len(key_trades) > 1:
+                ambiguous_journals += len(key_journals)
+                continue
+            if not key_trades:
+                unmatched_journals += 1
+                continue
+            outcome = outcomes.get(int(key_trades[0].id))
+            if outcome is None:
+                non_realized_journals += 1
+                continue
+            matched_journals += 1
+            group = "planned" if bool(key_journals[0].planned_trade) else "unplanned"
+            classified[group].append(outcome)
+
+        return {
+            "available": True,
+            "data_quality": "partial" if any(bool(item["fx_stale"]) for item in outcome_values) else "ok",
+            "methodology": "fifo_sell_execution",
+            "currency": account.base_currency,
+            "realized_trade_count": len(outcome_values),
+            "evaluated_trade_count": evaluated,
+            "win_count": len(positive),
+            "loss_count": len(negative),
+            "breakeven_count": breakeven,
+            "win_rate_pct": round(len(positive) / evaluated * 100.0, 6) if evaluated else None,
+            "average_win": round(avg_win, 6) if avg_win is not None else None,
+            "average_loss": round(avg_loss, 6) if avg_loss is not None else None,
+            "profit_loss_ratio": round(avg_win / abs(avg_loss), 6) if avg_win is not None and avg_loss else None,
+            "total_realized_pnl": round(sum(float(item["realized_pnl"]) for item in outcome_values), 6),
+            "matched_journal_count": matched_journals,
+            "ambiguous_journal_count": ambiguous_journals,
+            "unmatched_journal_count": unmatched_journals,
+            "non_realized_journal_count": non_realized_journals,
+            "planned": self._summarize_classified_outcomes(classified["planned"]),
+            "unplanned": self._summarize_classified_outcomes(classified["unplanned"]),
+        }
+
+    @staticmethod
+    def _summarize_classified_outcomes(outcomes: List[Dict[str, Any]]) -> Dict[str, Any]:
+        wins = [item for item in outcomes if float(item["realized_pnl"]) > EPS]
+        losses = [item for item in outcomes if float(item["realized_pnl"]) < -EPS]
+        evaluated = len(wins) + len(losses)
+        return {
+            "sample_count": len(outcomes),
+            "win_rate_pct": round(len(wins) / evaluated * 100.0, 6) if evaluated else None,
+            "total_realized_pnl": round(sum(float(item["realized_pnl"]) for item in outcomes), 6),
+        }
+
+    @staticmethod
+    def _empty_trade_performance(*, reason: str, data_quality: str = "unavailable") -> Dict[str, Any]:
+        empty_group = {"sample_count": 0, "win_rate_pct": None, "total_realized_pnl": 0.0}
+        return {
+            "available": False,
+            "data_quality": data_quality,
+            "methodology": "fifo_sell_execution",
+            "currency": None,
+            "reason": reason,
+            "realized_trade_count": 0,
+            "evaluated_trade_count": 0,
+            "win_count": 0,
+            "loss_count": 0,
+            "breakeven_count": 0,
+            "win_rate_pct": None,
+            "average_win": None,
+            "average_loss": None,
+            "profit_loss_ratio": None,
+            "total_realized_pnl": 0.0,
+            "matched_journal_count": 0,
+            "ambiguous_journal_count": 0,
+            "unmatched_journal_count": 0,
+            "non_realized_journal_count": 0,
+            "planned": dict(empty_group),
+            "unplanned": dict(empty_group),
+        }
 
     # ------------------------------------------------------------------
     # Event writes

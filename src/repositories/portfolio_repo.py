@@ -490,6 +490,17 @@ class PortfolioRepository:
                 "chased_count": int(totals[2] or 0),
             }
 
+    def list_trade_journals_for_account(self, account_id: int) -> List[PortfolioTradeJournal]:
+        with self.db.get_session() as session:
+            rows = session.execute(
+                select(PortfolioTradeJournal)
+                .where(PortfolioTradeJournal.account_id == account_id)
+                .order_by(PortfolioTradeJournal.journal_date.asc(), PortfolioTradeJournal.id.asc())
+            ).scalars().all()
+            for row in rows:
+                session.expunge(row)
+            return list(rows)
+
     def has_trade_uid(self, account_id: int, trade_uid: Optional[str]) -> bool:
         """Return True when trade_uid already exists in the account."""
         uid = (trade_uid or "").strip()

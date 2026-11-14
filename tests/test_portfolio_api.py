@@ -1061,6 +1061,71 @@ class PortfolioApiTestCase(unittest.TestCase):
         self.assertEqual(diagnosis.json()["missing_data"], [])
         self.assertEqual(diagnosis.json()["strategy_profile"]["risk_budget_pct"], 3.5)
 
+    def test_trade_journal_round_trip_and_discipline_summary(self) -> None:
+        account_id = self._create_position()
+        planned = self.client.post(
+            "/api/v1/portfolio/trade-journal",
+            json={
+                "account_id": account_id,
+                "symbol": "600519",
+                "journal_date": "2026-01-03",
+                "side": "buy",
+                "reason": "回踩计划支撑位",
+                "planned_trade": True,
+                "emotion_state": "冷静",
+                "chased_price": False,
+            },
+        )
+        self.assertEqual(planned.status_code, 200, planned.text)
+        unplanned = self.client.post(
+            "/api/v1/portfolio/trade-journal",
+            json={
+                "account_id": account_id,
+                "symbol": "600519",
+                "journal_date": "2026-01-04",
+                "side": "sell",
+                "reason": "盘中波动引发临时减仓",
+                "planned_trade": False,
+                "emotion_state": "焦虑",
+                "chased_price": True,
+                "plan_deviation": "未等待收盘确认",
+                "post_review": "下次按预设条件执行",
+            },
+        )
+        self.assertEqual(unplanned.status_code, 200, unplanned.text)
+
+        listed = self.client.get(
+            "/api/v1/portfolio/trade-journal",
+            params={"account_id": account_id},
+        )
+        self.assertEqual(listed.status_code, 200, listed.text)
+        payload = listed.json()
+        self.assertEqual(payload["total"], 2)
+        self.assertEqual(payload["summary"]["planned_count"], 1)
+        self.assertEqual(payload["summary"]["unplanned_count"], 1)
+        self.assertEqual(payload["summary"]["chased_count"], 1)
+        self.assertFalse(payload["summary"]["sample_sufficient"])
+        self.assertIn("win_rate", payload["summary"]["unavailable_metrics"])
+        self.assertEqual(payload["items"][0]["plan_deviation"], "未等待收盘确认")
+
+        deleted = self.client.delete(f"/api/v1/portfolio/trade-journal/{planned.json()['id']}")
+        self.assertEqual(deleted.status_code, 200, deleted.text)
+        self.assertEqual(deleted.json()["deleted"], 1)
+
+    def test_trade_journal_rejects_unknown_account(self) -> None:
+        response = self.client.post(
+            "/api/v1/portfolio/trade-journal",
+            json={
+                "account_id": 999999,
+                "symbol": "600519",
+                "journal_date": "2026-01-03",
+                "side": "buy",
+                "reason": "计划买入",
+            },
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertEqual(response.json()["error"], "validation_error")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from datetime import date, datetime
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from sqlalchemy import and_, delete, desc, func, select
+from sqlalchemy import Integer, and_, delete, desc, func, select
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from src.storage import (
@@ -27,6 +27,7 @@ from src.storage import (
     PortfolioReviewVerification,
     PortfolioStrategyProfile,
     PortfolioTrade,
+    PortfolioTradeJournal,
     StockDaily,
 )
 
@@ -411,6 +412,83 @@ class PortfolioRepository:
     def delete_corporate_action(self, action_id: int) -> bool:
         with self.portfolio_write_session() as session:
             return self.delete_corporate_action_in_session(session=session, action_id=action_id)
+
+    def add_trade_journal(
+        self,
+        *,
+        account_id: int,
+        symbol: str,
+        journal_date: date,
+        side: str,
+        reason: str,
+        planned_trade: bool,
+        emotion_state: Optional[str],
+        chased_price: bool,
+        plan_deviation: Optional[str],
+        post_review: Optional[str],
+    ) -> PortfolioTradeJournal:
+        with self.portfolio_write_session() as session:
+            row = PortfolioTradeJournal(
+                account_id=account_id,
+                symbol=symbol,
+                journal_date=journal_date,
+                side=side,
+                reason=reason,
+                planned_trade=planned_trade,
+                emotion_state=emotion_state,
+                chased_price=chased_price,
+                plan_deviation=plan_deviation,
+                post_review=post_review,
+            )
+            session.add(row)
+            session.flush()
+            session.refresh(row)
+            session.expunge(row)
+            return row
+
+    def delete_trade_journal(self, journal_id: int) -> bool:
+        with self.portfolio_write_session() as session:
+            result = session.execute(
+                delete(PortfolioTradeJournal).where(PortfolioTradeJournal.id == journal_id)
+            )
+            return bool(result.rowcount)
+
+    def query_trade_journals(
+        self,
+        *,
+        account_id: Optional[int],
+        page: int,
+        page_size: int,
+    ) -> Tuple[List[PortfolioTradeJournal], Dict[str, int]]:
+        with self.db.get_session() as session:
+            conditions = []
+            if account_id is not None:
+                conditions.append(PortfolioTradeJournal.account_id == account_id)
+            where_clause = and_(*conditions) if conditions else True
+            rows = session.execute(
+                select(PortfolioTradeJournal)
+                .where(where_clause)
+                .order_by(PortfolioTradeJournal.journal_date.desc(), PortfolioTradeJournal.id.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            ).scalars().all()
+            totals = session.execute(
+                select(
+                    func.count(PortfolioTradeJournal.id),
+                    func.sum(PortfolioTradeJournal.planned_trade.cast(Integer)),
+                    func.sum(PortfolioTradeJournal.chased_price.cast(Integer)),
+                ).where(where_clause)
+            ).one()
+            for row in rows:
+                session.expunge(row)
+            total = int(totals[0] or 0)
+            planned = int(totals[1] or 0)
+            return list(rows), {
+                "total": total,
+                "planned_count": planned,
+                "unplanned_count": total - planned,
+                "chased_count": int(totals[2] or 0),
+            }
 
     def has_trade_uid(self, account_id: int, trade_uid: Optional[str]) -> bool:
         """Return True when trade_uid already exists in the account."""

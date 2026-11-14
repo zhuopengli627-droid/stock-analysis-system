@@ -28,6 +28,9 @@ import type {
   PortfolioStrategyProfilePayload,
   PortfolioSnapshotResponse,
   PortfolioTradeCreateRequest,
+  PortfolioTradeJournalItem,
+  PortfolioTradeJournalListResponse,
+  PortfolioTradeJournalPayload,
   PortfolioTradeListResponse,
 } from '../types/portfolio';
 
@@ -280,6 +283,36 @@ export const portfolioApi = {
 
   async deleteTrade(tradeId: number): Promise<PortfolioDeleteResponse> {
     const response = await apiClient.delete<Record<string, unknown>>(`/api/v1/portfolio/trades/${tradeId}`);
+    return toCamelCase<PortfolioDeleteResponse>(response.data);
+  },
+
+  async createTradeJournal(payload: PortfolioTradeJournalPayload): Promise<PortfolioTradeJournalItem> {
+    const response = await apiClient.post<Record<string, unknown>>('/api/v1/portfolio/trade-journal', {
+      account_id: payload.accountId,
+      symbol: payload.symbol,
+      journal_date: payload.journalDate,
+      side: payload.side,
+      reason: payload.reason,
+      planned_trade: payload.plannedTrade,
+      emotion_state: payload.emotionState || null,
+      chased_price: payload.chasedPrice,
+      plan_deviation: payload.planDeviation || null,
+      post_review: payload.postReview || null,
+    });
+    return toCamelCase<PortfolioTradeJournalItem>(response.data);
+  },
+
+  async listTradeJournals(accountId?: number): Promise<PortfolioTradeJournalListResponse> {
+    const response = await apiClient.get<Record<string, unknown>>('/api/v1/portfolio/trade-journal', {
+      params: { account_id: accountId, page: 1, page_size: 100 },
+    });
+    return toCamelCase<PortfolioTradeJournalListResponse>(response.data);
+  },
+
+  async deleteTradeJournal(journalId: number): Promise<PortfolioDeleteResponse> {
+    const response = await apiClient.delete<Record<string, unknown>>(
+      `/api/v1/portfolio/trade-journal/${journalId}`,
+    );
     return toCamelCase<PortfolioDeleteResponse>(response.data);
   },
 

@@ -247,6 +247,77 @@ class PortfolioService:
             "updated_at": row.updated_at.isoformat() if row.updated_at else None,
         }
 
+    def record_trade_journal(
+        self,
+        *,
+        account_id: int,
+        symbol: str,
+        journal_date: date,
+        side: str,
+        reason: str,
+        planned_trade: bool,
+        emotion_state: Optional[str],
+        chased_price: bool,
+        plan_deviation: Optional[str],
+        post_review: Optional[str],
+    ) -> Dict[str, Any]:
+        self._require_active_account(account_id)
+        side_norm = (side or "").strip().lower()
+        if side_norm not in VALID_SIDES:
+            raise ValueError("side must be buy or sell")
+        symbol_norm = self._normalize_symbol_for_storage(symbol)
+        if not symbol_norm:
+            raise ValueError("symbol is required")
+        reason_norm = (reason or "").strip()
+        if not reason_norm:
+            raise ValueError("reason is required")
+        clean_text = lambda value: (value or "").strip() or None
+        row = self.repo.add_trade_journal(
+            account_id=account_id,
+            symbol=symbol_norm,
+            journal_date=journal_date,
+            side=side_norm,
+            reason=reason_norm,
+            planned_trade=bool(planned_trade),
+            emotion_state=clean_text(emotion_state),
+            chased_price=bool(chased_price),
+            plan_deviation=clean_text(plan_deviation),
+            post_review=clean_text(post_review),
+        )
+        return self._trade_journal_row_to_dict(row)
+
+    def list_trade_journals(
+        self,
+        *,
+        account_id: Optional[int] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> Dict[str, Any]:
+        if account_id is not None:
+            self._require_active_account(account_id)
+        page, page_size = self._validate_paging(page=page, page_size=page_size)
+        rows, summary = self.repo.query_trade_journals(
+            account_id=account_id,
+            page=page,
+            page_size=page_size,
+        )
+        total = summary["total"]
+        return {
+            "items": [self._trade_journal_row_to_dict(row) for row in rows],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "summary": {
+                **summary,
+                "sample_sufficient": total >= 20,
+                "sample_warning": None if total >= 20 else "Sample size below 20; discipline statistics are descriptive only.",
+                "unavailable_metrics": ["win_rate", "profit_loss_ratio", "max_drawdown"],
+            },
+        }
+
+    def delete_trade_journal(self, journal_id: int) -> bool:
+        return self.repo.delete_trade_journal(journal_id)
+
     # ------------------------------------------------------------------
     # Event writes
     # ------------------------------------------------------------------
@@ -1750,6 +1821,24 @@ class PortfolioService:
             "tax": float(row.tax),
             "note": row.note,
             "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+
+    @staticmethod
+    def _trade_journal_row_to_dict(row: Any) -> Dict[str, Any]:
+        return {
+            "id": int(row.id),
+            "account_id": int(row.account_id),
+            "symbol": row.symbol,
+            "journal_date": row.journal_date.isoformat() if row.journal_date else "",
+            "side": row.side,
+            "reason": row.reason,
+            "planned_trade": bool(row.planned_trade),
+            "emotion_state": row.emotion_state,
+            "chased_price": bool(row.chased_price),
+            "plan_deviation": row.plan_deviation,
+            "post_review": row.post_review,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
         }
 
     @staticmethod

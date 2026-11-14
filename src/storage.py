@@ -668,6 +668,30 @@ class PortfolioStrategyProfile(Base):
     )
 
 
+class PortfolioTradeJournal(Base):
+    """User-authored context and discipline review for one trade decision."""
+
+    __tablename__ = 'portfolio_trade_journals'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey('portfolio_accounts.id'), nullable=False, index=True)
+    symbol = Column(String(16), nullable=False, index=True)
+    journal_date = Column(Date, nullable=False, index=True)
+    side = Column(String(8), nullable=False)  # buy/sell
+    reason = Column(Text, nullable=False)
+    planned_trade = Column(Boolean, nullable=False, default=True)
+    emotion_state = Column(String(64))
+    chased_price = Column(Boolean, nullable=False, default=False)
+    plan_deviation = Column(Text)
+    post_review = Column(Text)
+    created_at = Column(DateTime, default=datetime.now, index=True)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    __table_args__ = (
+        Index('ix_portfolio_trade_journal_account_date', 'account_id', 'journal_date'),
+    )
+
+
 class PortfolioPositionLot(Base):
     """Lot-level remaining quantities used by FIFO replay."""
 

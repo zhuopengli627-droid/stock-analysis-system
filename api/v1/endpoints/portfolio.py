@@ -41,8 +41,11 @@ from api.v1.schemas.portfolio import (
     PortfolioSnapshotResponse,
     PortfolioStrategyProfileItem,
     PortfolioStrategyProfileRequest,
-    PortfolioTradeListResponse,
     PortfolioTradeCreateRequest,
+    PortfolioTradeJournalCreateRequest,
+    PortfolioTradeJournalItem,
+    PortfolioTradeJournalListResponse,
+    PortfolioTradeListResponse,
 )
 from src.services.task_queue import get_task_queue
 from src.services.portfolio_import_service import PortfolioImportService
@@ -258,6 +261,66 @@ def delete_trade(trade_id: int) -> PortfolioDeleteResponse:
         raise
     except Exception as exc:
         raise _internal_error("Delete trade event failed", exc)
+
+
+@router.post(
+    "/trade-journal",
+    response_model=PortfolioTradeJournalItem,
+    responses={400: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    summary="Record a trade journal entry",
+)
+def create_trade_journal(request: PortfolioTradeJournalCreateRequest) -> PortfolioTradeJournalItem:
+    service = PortfolioService()
+    try:
+        data = service.record_trade_journal(**request.model_dump())
+        return PortfolioTradeJournalItem(**data)
+    except PortfolioBusyError as exc:
+        raise _conflict_error(error="portfolio_busy", message=str(exc))
+    except ValueError as exc:
+        raise _bad_request(exc)
+    except Exception as exc:
+        raise _internal_error("Create trade journal failed", exc)
+
+
+@router.get(
+    "/trade-journal",
+    response_model=PortfolioTradeJournalListResponse,
+    responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    summary="List trade journal entries and discipline summary",
+)
+def list_trade_journals(
+    account_id: Optional[int] = Query(None, description="Optional account id"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> PortfolioTradeJournalListResponse:
+    service = PortfolioService()
+    try:
+        data = service.list_trade_journals(account_id=account_id, page=page, page_size=page_size)
+        return PortfolioTradeJournalListResponse(**data)
+    except ValueError as exc:
+        raise _bad_request(exc)
+    except Exception as exc:
+        raise _internal_error("List trade journals failed", exc)
+
+
+@router.delete(
+    "/trade-journal/{journal_id}",
+    response_model=PortfolioDeleteResponse,
+    responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    summary="Delete a trade journal entry",
+)
+def delete_trade_journal(journal_id: int) -> PortfolioDeleteResponse:
+    service = PortfolioService()
+    try:
+        if not service.delete_trade_journal(journal_id):
+            raise api_error(404, "not_found", f"Trade journal not found: {journal_id}")
+        return PortfolioDeleteResponse(deleted=1)
+    except PortfolioBusyError as exc:
+        raise _conflict_error(error="portfolio_busy", message=str(exc))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _internal_error("Delete trade journal failed", exc)
 
 
 @router.post(

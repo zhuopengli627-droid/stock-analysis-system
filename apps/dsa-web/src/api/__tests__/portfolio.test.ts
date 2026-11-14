@@ -1,16 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { portfolioApi } from '../portfolio';
 
-const { get, put } = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn() }));
+const { deleteRequest, get, post, put } = vi.hoisted(() => ({
+  deleteRequest: vi.fn(),
+  get: vi.fn(),
+  post: vi.fn(),
+  put: vi.fn(),
+}));
 
 vi.mock('../index', () => ({
-  default: { get, put },
+  default: { delete: deleteRequest, get, post, put },
 }));
 
 describe('portfolioApi.getPositionDiagnosis', () => {
   beforeEach(() => {
     get.mockReset();
+    post.mockReset();
     put.mockReset();
+    deleteRequest.mockReset();
   });
 
   it('serializes the position scope and converts nested diagnosis fields', async () => {
@@ -56,5 +63,48 @@ describe('portfolioApi.getPositionDiagnosis', () => {
     expect(result.facts.avgCost).toBe(100);
     expect(result.calculations.positionWeightPct).toBe(42);
     expect(result.missingData).toEqual(['buy_thesis']);
+  });
+
+  it('serializes a journal entry and converts its discipline summary', async () => {
+    post.mockResolvedValueOnce({ data: { id: 9, account_id: 2, symbol: '600519' } });
+    get.mockResolvedValueOnce({
+      data: {
+        items: [],
+        total: 1,
+        page: 1,
+        page_size: 100,
+        summary: {
+          total: 1,
+          planned_count: 1,
+          unplanned_count: 0,
+          chased_count: 0,
+          sample_sufficient: false,
+          sample_warning: 'sample warning',
+          unavailable_metrics: ['win_rate'],
+        },
+      },
+    });
+
+    await portfolioApi.createTradeJournal({
+      accountId: 2,
+      symbol: '600519',
+      journalDate: '2026-01-03',
+      side: 'buy',
+      reason: 'planned support entry',
+      plannedTrade: true,
+      chasedPrice: false,
+    });
+    const listed = await portfolioApi.listTradeJournals(2);
+
+    expect(post).toHaveBeenCalledWith('/api/v1/portfolio/trade-journal', expect.objectContaining({
+      account_id: 2,
+      planned_trade: true,
+      chased_price: false,
+    }));
+    expect(get).toHaveBeenCalledWith('/api/v1/portfolio/trade-journal', {
+      params: { account_id: 2, page: 1, page_size: 100 },
+    });
+    expect(listed.summary.plannedCount).toBe(1);
+    expect(listed.summary.sampleSufficient).toBe(false);
   });
 });

@@ -32,9 +32,10 @@ describe('SidebarNav', () => {
 
     expect(screen.getByRole('link', { name: '选股' })).toHaveAttribute('href', '/screening');
     const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
-    expect(hrefs.slice(0, 6)).toEqual(['/', '/market-review', '/chat', '/screening', '/portfolio', '/decision-signals']);
+    expect(hrefs.slice(0, 7)).toEqual(['/', '/market-review', '/chat', '/screening', '/portfolio', '/trade-journal', '/decision-signals']);
     expect(screen.getByRole('link', { name: '投资总览' })).toHaveAttribute('href', '/');
     expect(screen.getByRole('link', { name: '市场复盘' })).toHaveAttribute('href', '/market-review');
+    expect(screen.getByRole('link', { name: '交易日志' })).toHaveAttribute('href', '/trade-journal');
   });
 
   it('shows the shared completion badge only when chat completion is pending', () => {

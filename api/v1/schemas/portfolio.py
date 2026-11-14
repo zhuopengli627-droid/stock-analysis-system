@@ -110,6 +110,43 @@ class PortfolioTradeListResponse(BaseModel):
     page_size: int
 
 
+class PortfolioTradeJournalCreateRequest(BaseModel):
+    account_id: int
+    symbol: str = Field(..., min_length=1, max_length=16)
+    journal_date: date
+    side: Literal["buy", "sell"]
+    reason: str = Field(..., min_length=1, max_length=4000)
+    planned_trade: bool = True
+    emotion_state: Optional[str] = Field(None, max_length=64)
+    chased_price: bool = False
+    plan_deviation: Optional[str] = Field(None, max_length=2000)
+    post_review: Optional[str] = Field(None, max_length=4000)
+
+
+class PortfolioTradeJournalItem(PortfolioTradeJournalCreateRequest):
+    id: int
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class PortfolioTradeJournalSummary(BaseModel):
+    total: int
+    planned_count: int
+    unplanned_count: int
+    chased_count: int
+    sample_sufficient: bool
+    sample_warning: Optional[str] = None
+    unavailable_metrics: List[str] = Field(default_factory=list)
+
+
+class PortfolioTradeJournalListResponse(BaseModel):
+    items: List[PortfolioTradeJournalItem] = Field(default_factory=list)
+    total: int
+    page: int
+    page_size: int
+    summary: PortfolioTradeJournalSummary
+
+
 class PortfolioCashLedgerListItem(BaseModel):
     id: int
     account_id: int

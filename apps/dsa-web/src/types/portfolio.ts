@@ -290,6 +290,43 @@ export interface PortfolioTradeListResponse {
   pageSize: number;
 }
 
+export interface PortfolioTradeJournalPayload {
+  accountId: number;
+  symbol: string;
+  journalDate: string;
+  side: PortfolioSide;
+  reason: string;
+  plannedTrade: boolean;
+  emotionState?: string | null;
+  chasedPrice: boolean;
+  planDeviation?: string | null;
+  postReview?: string | null;
+}
+
+export interface PortfolioTradeJournalItem extends PortfolioTradeJournalPayload {
+  id: number;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface PortfolioTradeJournalSummary {
+  total: number;
+  plannedCount: number;
+  unplannedCount: number;
+  chasedCount: number;
+  sampleSufficient: boolean;
+  sampleWarning?: string | null;
+  unavailableMetrics: string[];
+}
+
+export interface PortfolioTradeJournalListResponse {
+  items: PortfolioTradeJournalItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  summary: PortfolioTradeJournalSummary;
+}
+
 export interface PortfolioCashLedgerListItem {
   id: number;
   accountId: number;

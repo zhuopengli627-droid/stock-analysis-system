@@ -48,6 +48,10 @@ vi.mock('./pages/PortfolioPage', () => ({
   default: () => <div data-testid="portfolio-page">Portfolio</div>,
 }));
 
+vi.mock('./pages/TradeJournalPage', () => ({
+  default: () => <div data-testid="trade-journal-page">Trade journal</div>,
+}));
+
 vi.mock('./pages/DecisionSignalsPage', () => ({
   default: () => <div data-testid="decision-signals-page">Decision signals</div>,
 }));
@@ -217,6 +221,15 @@ describe('App routing behavior', () => {
     expect(await screen.findByTestId('decision-signals-page')).toBeInTheDocument();
     expect(setCurrentRoute).toHaveBeenCalledWith('/decision-signals');
     expect(screen.queryByTestId('home-page')).not.toBeInTheDocument();
+  });
+
+  it('routes /trade-journal to the trade journal page after auth is ready', async () => {
+    window.history.pushState({}, '', '/trade-journal');
+
+    render(<App />);
+
+    expect(await screen.findByTestId('trade-journal-page')).toBeInTheDocument();
+    expect(setCurrentRoute).toHaveBeenCalledWith('/trade-journal');
   });
 
   it('routes /data to the data capability page after auth is ready', async () => {
